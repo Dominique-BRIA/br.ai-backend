@@ -11,7 +11,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "dev": "node --watch --env-file-if-exists=.env src/index.ts",
+    "dev": "node --env-file-if-exists=.env src/index.ts",
     "start": "node --env-file-if-exists=.env dist/index.js",
     "build": "node scripts/build.mjs",
     "check": "biome check .",

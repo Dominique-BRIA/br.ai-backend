@@ -2,62 +2,41 @@ import { randomUUID } from "node:crypto";
 import {
   type ErrorCode,
   HELLO_TIMEOUT_MS,
-  type MachineInfo,
   PROTOCOL_VERSION,
   parseClientMessage,
   type ServerMessage,
 } from "@br-ia/protocol";
-import type { FastifyBaseLogger } from "fastify";
 import type { WebSocket } from "ws";
+import { findSession } from "../auth/sessions.ts";
+import type { AppContext } from "../context.ts";
+import type { LiveConnection } from "../realtime/hub.ts";
+import { teammateIds } from "../services/access.ts";
 
 /** Codes de fermeture WebSocket propres à br.ia (plage 4000-4999 réservée aux applications). */
 export const CLOSE_CODES = {
+  unauthenticated: 4401,
   protocolError: 4400,
   helloTimeout: 4408,
   protocolMismatch: 4426,
 } as const;
 
-export interface MachineConnection {
-  connectionId: string;
-  machine: MachineInfo;
-  connectedAt: Date;
-}
-
-/** Les machines actuellement connectées, indexées par identifiant de connexion. */
-export class ConnectionRegistry {
-  readonly #connections = new Map<string, MachineConnection>();
-
-  add(connection: MachineConnection): void {
-    this.#connections.set(connection.connectionId, connection);
-  }
-
-  remove(connectionId: string): void {
-    this.#connections.delete(connectionId);
-  }
-
-  get size(): number {
-    return this.#connections.size;
-  }
-}
-
 /**
  * Gère une connexion d'extension : le premier message doit être `hello`,
- * envoyé dans le délai imparti, avec une version de protocole compatible.
+ * envoyé dans le délai imparti, avec une version de protocole compatible
+ * et un jeton de session valable.
  */
 export function handleConnection(
   socket: WebSocket,
-  options: {
-    registry: ConnectionRegistry;
-    serverVersion: string;
-    log: FastifyBaseLogger;
-    helloTimeoutMs?: number;
-  },
+  options: { ctx: AppContext; serverVersion: string; helloTimeoutMs?: number },
 ): void {
-  const { registry, serverVersion, log } = options;
+  const { ctx, serverVersion } = options;
   const connectionId = randomUUID();
-  let machine: MachineInfo | null = null;
+  let live: LiveConnection | null = null;
+  let greeting = false;
 
-  const send = (message: ServerMessage) => socket.send(JSON.stringify(message));
+  const send = (message: ServerMessage) => {
+    if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
+  };
   const fail = (code: ErrorCode, message: string, closeCode: number) => {
     send({ type: "error", code, message });
     socket.close(closeCode, code);
@@ -67,18 +46,36 @@ export function handleConnection(
     fail("hello_timeout", "La machine ne s'est pas présentée à temps.", CLOSE_CODES.helloTimeout);
   }, options.helloTimeoutMs ?? HELLO_TIMEOUT_MS);
 
-  socket.on("message", (data) => {
-    const message = parseClientMessage(data.toString());
+  /** Prévient les coéquipiers (sauf le membre lui-même) qu'il vient d'arriver ou de partir. */
+  const announce = async (userId: string, online: boolean) => {
+    const recipients = (await teammateIds(ctx, userId)).filter((id) => id !== userId);
+    ctx.hub.sendTo(recipients, { type: "presence.changed", userId, online });
+  };
+
+  // Les erreurs des traitements asynchrones sont journalisées, jamais laissées sans suite.
+  const safely = (task: () => Promise<void>) => {
+    task().catch((error: unknown) =>
+      ctx.log.error({ err: error, connectionId }, "erreur de connexion temps réel"),
+    );
+  };
+
+  socket.on("message", (data) => safely(() => onMessage(data.toString())));
+  socket.on("close", () => safely(onClose));
+
+  async function onMessage(raw: string) {
+    const message = parseClientMessage(raw);
     if (!message) {
       fail("invalid_message", "Message illisible.", CLOSE_CODES.protocolError);
       return;
     }
 
-    if (!machine) {
+    if (!live) {
+      if (greeting) return;
       if (message.type !== "hello") {
         fail("hello_expected", "Le premier message doit être « hello ».", CLOSE_CODES.protocolError);
         return;
       }
+      greeting = true;
       clearTimeout(helloTimer);
       if (message.protocolVersion !== PROTOCOL_VERSION) {
         fail(
@@ -88,10 +85,22 @@ export function handleConnection(
         );
         return;
       }
-      machine = message.machine;
-      registry.add({ connectionId, machine, connectedAt: new Date() });
-      log.info({ connectionId, machine }, "machine connectée");
+      const session = await findSession(ctx, message.token);
+      if (!session) {
+        fail(
+          "unauthenticated",
+          "Session inconnue ou expirée. Reconnectez-vous.",
+          CLOSE_CODES.unauthenticated,
+        );
+        return;
+      }
+      if (socket.readyState !== socket.OPEN) return;
+
+      live = { connectionId, userId: session.userId, machine: message.machine, send };
+      const firstMachine = ctx.hub.add(live);
+      ctx.log.info({ connectionId, userId: session.userId, machine: message.machine }, "machine connectée");
       send({ type: "welcome", protocolVersion: PROTOCOL_VERSION, serverVersion, connectionId });
+      if (firstMachine) await announce(session.userId, true);
       return;
     }
 
@@ -103,13 +112,13 @@ export function handleConnection(
         send({ type: "pong", sentAt: message.sentAt });
         return;
     }
-  });
+  }
 
-  socket.on("close", () => {
+  async function onClose() {
     clearTimeout(helloTimer);
-    if (machine) {
-      registry.remove(connectionId);
-      log.info({ connectionId }, "machine déconnectée");
-    }
-  });
+    if (!live) return;
+    const lastMachine = ctx.hub.remove(live);
+    ctx.log.info({ connectionId }, "machine déconnectée");
+    if (lastMachine) await announce(live.userId, false);
+  }
 }

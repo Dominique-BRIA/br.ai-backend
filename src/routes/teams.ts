@@ -1,0 +1,162 @@
+import {
+  acceptInvitationBody,
+  type CreateInvitationResponse,
+  createProjectBody,
+  createTeamBody,
+  type Project,
+  type Team,
+  transferChefBody,
+  updateProjectBody,
+  type Workspace,
+} from "@br-ia/protocol";
+import { and, eq, gt, isNull } from "drizzle-orm";
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { newInvitationCode, normalizeInvitationCode } from "../auth/secrets.ts";
+import type { AppContext } from "../context.ts";
+import { projects, teamInvitations, teamMembers, teams } from "../db/schema.ts";
+import { forbidden, HttpError, notFound, parse } from "../http/errors.ts";
+import { memberIds, requireChef, requireMember, roleIn } from "../services/access.ts";
+import { buildTeam, buildWorkspace } from "../services/workspace.ts";
+
+const INVITATION_TTL_MS = 7 * 24 * 60 * 60_000;
+
+const teamParams = z.object({ teamId: z.uuid() });
+const memberParams = z.object({ teamId: z.uuid(), userId: z.uuid() });
+const projectParams = z.object({ projectId: z.uuid() });
+
+export function teamRoutes(app: FastifyInstance, ctx: AppContext): void {
+  /** Prévient les membres d'une équipe que l'espace de travail a changé. */
+  const notifyTeam = async (teamId: string, extraUserIds: string[] = []) => {
+    ctx.hub.sendTo([...(await memberIds(ctx, teamId)), ...extraUserIds], { type: "workspace.changed" });
+  };
+
+  app.get("/workspace", async (request): Promise<Workspace> => buildWorkspace(ctx, request.userId));
+
+  app.post("/teams", async (request): Promise<{ team: Team }> => {
+    const { name } = parse(createTeamBody, request.body);
+    const team = await ctx.db.transaction(async (tx) => {
+      const [created] = await tx.insert(teams).values({ name }).returning();
+      if (!created) throw new Error("Création de l'équipe impossible.");
+      await tx.insert(teamMembers).values({ teamId: created.id, userId: request.userId, role: "chef" });
+      return created;
+    });
+    await notifyTeam(team.id);
+    return { team: await buildTeam(ctx, request.userId, team.id) };
+  });
+
+  app.post("/teams/:teamId/invitations", async (request): Promise<CreateInvitationResponse> => {
+    const { teamId } = parse(teamParams, request.params);
+    await requireChef(ctx, request.userId, teamId);
+    const expiresAt = new Date(Date.now() + INVITATION_TTL_MS);
+    const code = newInvitationCode("EQP");
+    await ctx.db.insert(teamInvitations).values({ teamId, code, createdBy: request.userId, expiresAt });
+    return { code, expiresAt: expiresAt.toISOString() };
+  });
+
+  app.post("/invitations/accept", async (request): Promise<{ team: Team }> => {
+    const code = normalizeInvitationCode(parse(acceptInvitationBody, request.body).code);
+    const [invitation] = await ctx.db
+      .select({ teamId: teamInvitations.teamId })
+      .from(teamInvitations)
+      .where(
+        and(
+          eq(teamInvitations.code, code),
+          isNull(teamInvitations.revokedAt),
+          gt(teamInvitations.expiresAt, new Date()),
+        ),
+      );
+    if (!invitation)
+      throw new HttpError(404, "invitation_invalid", "Ce code d'invitation n'est pas valable.");
+    if (await roleIn(ctx, request.userId, invitation.teamId)) {
+      throw new HttpError(409, "already_member", "Vous faites déjà partie de cette équipe.");
+    }
+    await ctx.db.insert(teamMembers).values({ teamId: invitation.teamId, userId: request.userId });
+    await notifyTeam(invitation.teamId);
+    return { team: await buildTeam(ctx, request.userId, invitation.teamId) };
+  });
+
+  app.delete("/teams/:teamId/members/:userId", async (request, reply) => {
+    const { teamId, userId } = parse(memberParams, request.params);
+    await requireChef(ctx, request.userId, teamId);
+    if (userId === request.userId) throw forbidden("Le chef ne peut pas se retirer lui-même.");
+    if (!(await roleIn(ctx, userId, teamId))) throw notFound("Ce membre ne fait pas partie de l'équipe.");
+    await ctx.db
+      .delete(teamMembers)
+      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)));
+    await notifyTeam(teamId, [userId]);
+    return reply.code(204).send();
+  });
+
+  app.post("/teams/:teamId/transfer", async (request, reply) => {
+    const { teamId } = parse(teamParams, request.params);
+    const { userId } = parse(transferChefBody, request.body);
+    await requireChef(ctx, request.userId, teamId);
+    if (userId === request.userId) return reply.code(204).send();
+    if (!(await roleIn(ctx, userId, teamId))) throw notFound("Ce membre ne fait pas partie de l'équipe.");
+    await ctx.db.transaction(async (tx) => {
+      await tx
+        .update(teamMembers)
+        .set({ role: "membre" })
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, request.userId)));
+      await tx
+        .update(teamMembers)
+        .set({ role: "chef" })
+        .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)));
+    });
+    await notifyTeam(teamId);
+    return reply.code(204).send();
+  });
+
+  app.post("/teams/:teamId/leave", async (request, reply) => {
+    const { teamId } = parse(teamParams, request.params);
+    const role = await requireMember(ctx, request.userId, teamId);
+    if (role === "chef") {
+      throw new HttpError(
+        409,
+        "chef_must_transfer",
+        "Transmettez d'abord votre rôle de chef à un autre membre.",
+      );
+    }
+    await ctx.db
+      .delete(teamMembers)
+      .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, request.userId)));
+    await notifyTeam(teamId, [request.userId]);
+    return reply.code(204).send();
+  });
+
+  app.post("/teams/:teamId/projects", async (request): Promise<{ project: Project }> => {
+    const { teamId } = parse(teamParams, request.params);
+    const { name } = parse(createProjectBody, request.body);
+    await requireMember(ctx, request.userId, teamId);
+    const [project] = await ctx.db
+      .insert(projects)
+      .values({ teamId, name })
+      .returning({ id: projects.id, teamId: projects.teamId, name: projects.name });
+    if (!project) throw new Error("Création du projet impossible.");
+    await notifyTeam(teamId);
+    return { project };
+  });
+
+  app.patch("/projects/:projectId", async (request): Promise<{ project: Project }> => {
+    const { projectId } = parse(projectParams, request.params);
+    const changes = parse(updateProjectBody, request.body);
+    const [current] = await ctx.db.select().from(projects).where(eq(projects.id, projectId));
+    if (!current) throw notFound("Projet introuvable.");
+    const role = await requireMember(ctx, request.userId, current.teamId);
+    if (changes.archived !== undefined && role !== "chef")
+      throw forbidden("Seul le chef peut archiver un projet.");
+
+    const [project] = await ctx.db
+      .update(projects)
+      .set({
+        ...(changes.name !== undefined && { name: changes.name }),
+        ...(changes.archived !== undefined && { archivedAt: changes.archived ? new Date() : null }),
+      })
+      .where(eq(projects.id, projectId))
+      .returning({ id: projects.id, teamId: projects.teamId, name: projects.name });
+    if (!project) throw notFound("Projet introuvable.");
+    await notifyTeam(current.teamId);
+    return { project };
+  });
+}

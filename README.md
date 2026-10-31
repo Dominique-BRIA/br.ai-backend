@@ -20,7 +20,7 @@ Le serveur écoute sur `http://127.0.0.1:4000`. Vérification : `http://127.0.0.
 
 | Commande                         | Rôle                                                              |
 | -------------------------------- | ----------------------------------------------------------------- |
-| `npm run dev`                    | Serveur en développement, relancé à chaque modification           |
+| `npm run dev`                    | Serveur en développement (à relancer après une modification)      |
 | `npm run build` puis `npm start` | Version construite, dans `dist/`                                  |
 | `npm test`                       | Tests                                                             |
 | `npm run typecheck`              | Vérification des types                                            |
@@ -36,3 +36,16 @@ Le serveur écoute sur `http://127.0.0.1:4000`. Vérification : `http://127.0.0.
 | `drizzle/`           | Migrations de la base, appliquées au démarrage                                                       |
 | `test/`              | Tests                                                                                                |
 | `docs/`              | Documents du projet                                                                                  |
+
+## Comptes en développement
+
+- Le code d'invitation `BETA-DEV` est créé au démarrage, pour 100 comptes.
+- Sans clé Resend, les e-mails ne partent pas : le code de connexion est écrit dans le journal du serveur.
+- Pour envoyer de vrais e-mails, ajouter `RESEND_API_KEY` (et `MAIL_FROM`) dans `.env`.
+- Pour créer d'autres codes d'invitation, définir `ADMIN_TOKEN` dans `.env`, puis :
+
+  ```sh
+  curl -X POST http://127.0.0.1:4000/admin/beta-invites \
+    -H "x-admin-token: <ADMIN_TOKEN>" -H "Content-Type: application/json" \
+    -d '{"maxUses": 5, "note": "camarades"}'
+  ```
