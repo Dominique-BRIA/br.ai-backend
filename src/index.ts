@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { parseChain } from "./ai/client.ts";
 import { buildApp } from "./app.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db/client.ts";
@@ -22,7 +23,15 @@ const b2 =
       }
     : null;
 
-const app = await buildApp({
+const serveurChain = parseChain(config.AI_SERVEUR_CHAIN, {
+  gemini: config.GEMINI_API_KEY,
+  groq: config.GROQ_API_KEY,
+  mistral: config.MISTRAL_API_KEY,
+  openrouter: config.OPENROUTER_API_KEY,
+});
+
+const { app } = await buildApp({
+  serveurChain,
   storage: b2 ? new B2Storage(b2) : new DiskStorage(config.FILES_DIR),
   database,
   adminToken: config.ADMIN_TOKEN,
@@ -45,6 +54,9 @@ if (config.NODE_ENV === "development") {
   }
   app.log.info(`Code d'invitation de développement : ${DEV_INVITE_CODE}`);
 }
+app.log.info(
+  `Agent serveur : ${serveurChain.map((choice) => `${choice.provider.name}/${choice.model}`).join(", ") || "désactivé"}`,
+);
 app.log.info(
   b2
     ? `Pièces jointes sur Backblaze B2 (${b2.bucket}).`

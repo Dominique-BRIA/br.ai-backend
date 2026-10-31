@@ -5,6 +5,8 @@ import {
   locale,
   MESSAGE_MAX_LENGTH,
   machineSession,
+  memoryItem,
+  memoryStatus,
   message,
   team,
   user,
@@ -173,3 +175,16 @@ export type SessionsResponse = z.infer<typeof sessionsResponse>;
 /** DELETE /me — supprime le compte. Il faut recopier son adresse e-mail. */
 export const deleteAccountBody = z.object({ confirmEmail: email });
 export type DeleteAccountBody = z.input<typeof deleteAccountBody>;
+
+// Mémoire du projet
+
+/** GET /projects/:projectId/memory */
+export const memoryResponse = z.object({ items: z.array(memoryItem) });
+export type MemoryResponse = z.infer<typeof memoryResponse>;
+
+/**
+ * PATCH /memory/:itemId — changer le statut d'un élément.
+ * Seul le chef peut stopper une décision ; tout membre peut résoudre ou rouvrir le reste.
+ */
+export const updateMemoryBody = z.object({ status: memoryStatus });
+export type UpdateMemoryBody = z.input<typeof updateMemoryBody>;

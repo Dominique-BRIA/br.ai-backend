@@ -104,6 +104,7 @@ export function messageRoutes(app: FastifyInstance, ctx: AppContext): void {
     if (!message) throw new Error("Message non enregistré.");
 
     ctx.hub.sendTo(await memberIds(ctx, project.teamId), { type: "message.created", message });
+    ctx.onMemberMessage(message, project.teamId);
     return { message };
   });
 }

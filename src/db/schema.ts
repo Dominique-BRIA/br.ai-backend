@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  boolean,
   index,
   integer,
   pgEnum,
@@ -18,6 +19,8 @@ export const locale = pgEnum("locale", ["fr", "en"]);
 export const teamRole = pgEnum("team_role", ["chef", "membre"]);
 export const authorKind = pgEnum("author_kind", ["member", "serveur", "cuisinier"]);
 export const invitationKind = pgEnum("invitation_kind", ["beta", "team"]);
+export const memoryType = pgEnum("memory_type", ["decision", "question", "task", "compromise"]);
+export const memoryStatus = pgEnum("memory_status", ["open", "resolved", "stopped"]);
 
 export const users = pgTable("users", {
   id: uuid().primaryKey().defaultRandom(),
@@ -169,4 +172,48 @@ export const attachments = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index().on(t.messageId)],
+);
+
+/** Mémoire du projet : décisions, questions ouvertes, tâches et compromis. */
+export const memoryItems = pgTable(
+  "memory_items",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    projectId: uuid()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    type: memoryType().notNull(),
+    status: memoryStatus().notNull().default("open"),
+    text: text().notNull(),
+    sourceMessageId: uuid().references(() => messages.id, { onDelete: "set null" }),
+    /** Auteur du message d'origine, ou l'agent quand il propose lui-même (compromis). */
+    proposedByKind: authorKind().notNull(),
+    proposedByUserId: uuid().references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index().on(t.projectId, t.status)],
+);
+
+/**
+ * Chaque appel à une IA : de quoi mesurer la consommation (crédits) et repérer
+ * les fournisseurs qui échouent. Le contenu des échanges n'est pas conservé ici.
+ */
+export const aiCalls = pgTable(
+  "ai_calls",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    purpose: text().notNull(),
+    teamId: uuid().references(() => teams.id, { onDelete: "set null" }),
+    projectId: uuid().references(() => projects.id, { onDelete: "set null" }),
+    provider: text().notNull(),
+    model: text().notNull(),
+    inputTokens: integer().notNull().default(0),
+    outputTokens: integer().notNull().default(0),
+    durationMs: integer().notNull(),
+    ok: boolean().notNull(),
+    error: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.teamId, t.createdAt)],
 );

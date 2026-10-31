@@ -13,8 +13,9 @@ const binary = require.resolve(
   process.platform === "win32" ? `${platformPackage}/esbuild.exe` : `${platformPackage}/bin/esbuild`,
 );
 
-const ABNORMAL_EXIT = new Set([null, 259]);
-const ATTEMPTS = 3;
+// 259 (« encore actif ») et 3 : arrêts anormaux observés sans erreur de construction.
+const ABNORMAL_EXIT = new Set([null, 3, 259]);
+const ATTEMPTS = 6;
 
 function once(args) {
   return new Promise((resolve) => {
@@ -32,5 +33,6 @@ export async function esbuild(args) {
     if (!ABNORMAL_EXIT.has(code) || attempt === ATTEMPTS) {
       throw new Error(`esbuild a échoué (code ${code})`);
     }
+    await new Promise((resolve) => setTimeout(resolve, 300 * attempt));
   }
 }

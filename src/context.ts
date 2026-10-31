@@ -1,3 +1,4 @@
+import type { Message } from "@br-ia/protocol";
 import type { FastifyBaseLogger } from "fastify";
 import type { Database } from "./db/client.ts";
 import type { Mailer } from "./mail/mailer.ts";
@@ -10,5 +11,7 @@ export interface AppContext {
   hub: RealtimeHub;
   mailer: Mailer;
   storage: Storage;
+  /** Appelé après chaque message d'un membre : l'agent serveur le traite en arrière-plan. */
+  onMemberMessage: (message: Message, teamId: string) => void;
   log: FastifyBaseLogger;
 }

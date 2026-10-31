@@ -1,6 +1,8 @@
 import { WS_PATH } from "@br-ia/protocol";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyServerOptions } from "fastify";
+import { ServeurAgent } from "./agents/serveur.ts";
+import { type Ai, AiClient, type ModelChoice } from "./ai/client.ts";
 import { requireAuth } from "./auth/sessions.ts";
 import type { AppContext } from "./context.ts";
 import type { Database } from "./db/client.ts";
@@ -11,12 +13,13 @@ import { adminRoutes } from "./routes/admin.ts";
 import { attachmentRoutes } from "./routes/attachments.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { meRoutes } from "./routes/me.ts";
+import { memoryRoutes } from "./routes/memory.ts";
 import { messageRoutes } from "./routes/messages.ts";
 import { teamRoutes } from "./routes/teams.ts";
 import { MemoryStorage, type Storage } from "./storage/storage.ts";
 import { handleConnection } from "./ws/connection.ts";
 
-export const SERVER_VERSION = "0.3.0";
+export const SERVER_VERSION = "0.4.0";
 
 export interface AppOptions {
   database: Database;
@@ -26,6 +29,10 @@ export interface AppOptions {
   /** Par défaut, les fichiers sont gardés en mémoire (tests). */
   storage?: Storage;
   adminToken?: string;
+  /** Modèles de l'agent serveur, dans l'ordre d'essai. Vide : agent désactivé. */
+  serveurChain?: ModelChoice[];
+  /** Client d'IA ; par défaut, appels réels aux fournisseurs (les tests en fournissent un faux). */
+  ai?: Ai;
   helloTimeoutMs?: number;
 }
 
@@ -37,7 +44,13 @@ export async function buildApp(options: AppOptions) {
     mailer: options.mailer ?? new LogMailer(app.log),
     storage: options.storage ?? new MemoryStorage(),
     log: app.log,
+    onMemberMessage: () => {},
   };
+  const serveurChain = options.serveurChain ?? [];
+  const serveur =
+    serveurChain.length > 0 ? new ServeurAgent(ctx, options.ai ?? new AiClient(ctx), serveurChain) : null;
+  if (serveur) ctx.onMemberMessage = (message, teamId) => void serveur.onMemberMessage(message, teamId);
+  else app.log.warn("Agent serveur désactivé : aucune clé d'IA configurée.");
 
   registerErrorHandler(app);
   await app.register(websocket);
@@ -63,8 +76,11 @@ export async function buildApp(options: AppOptions) {
     messageRoutes(scope, ctx);
     attachmentRoutes(scope, ctx);
     meRoutes(scope, ctx);
+    memoryRoutes(scope, ctx);
   });
   await app.register(async (scope) => adminRoutes(scope, ctx, options.adminToken));
 
-  return Object.assign(app, { ctx });
+  // Pas d'Object.assign sur l'instance Fastify : elle se comporte comme une promesse,
+  // et l'attendre ferait perdre les propriétés ajoutées dans les types.
+  return { app, ctx, serveur };
 }

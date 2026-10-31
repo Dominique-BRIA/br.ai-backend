@@ -105,3 +105,26 @@ export const machineSession = z.object({
   online: z.boolean(),
 });
 export type MachineSession = z.infer<typeof machineSession>;
+
+/** Mémoire du projet, tenue par l'agent serveur (et modifiable par les membres). */
+export const memoryType = z.enum(["decision", "question", "task", "compromise"]);
+export type MemoryType = z.infer<typeof memoryType>;
+
+/** Ouvert ; résolu (question tranchée, tâche faite, compromis accepté) ; stoppé par le chef. */
+export const memoryStatus = z.enum(["open", "resolved", "stopped"]);
+export type MemoryStatus = z.infer<typeof memoryStatus>;
+
+export const memoryItem = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  type: memoryType,
+  status: memoryStatus,
+  text: z.string(),
+  /** Message à l'origine de cet élément. */
+  sourceMessageId: z.uuid().nullable(),
+  /** Membre qui l'a proposé (pour une décision : l'auteur du message d'origine). */
+  proposedBy: messageAuthor,
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export type MemoryItem = z.infer<typeof memoryItem>;

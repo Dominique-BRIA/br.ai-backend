@@ -69,6 +69,12 @@ const presenceChanged = z.object({
   online: z.boolean(),
 });
 
+/** La mémoire d'un projet a changé : la recharger. */
+const memoryChanged = z.object({
+  type: z.literal("memory.changed"),
+  projectId: z.uuid(),
+});
+
 /** Les équipes, leurs membres ou leurs projets ont changé : recharger l'espace de travail. */
 const workspaceChanged = z.object({
   type: z.literal("workspace.changed"),
@@ -94,13 +100,14 @@ export const serverMessage = z.discriminatedUnion("type", [
   pong,
   messageCreated,
   presenceChanged,
+  memoryChanged,
   workspaceChanged,
   error,
 ]);
 export type ServerMessage = z.infer<typeof serverMessage>;
 export type ServerEvent = Extract<
   ServerMessage,
-  { type: "message.created" | "presence.changed" | "workspace.changed" }
+  { type: "message.created" | "presence.changed" | "memory.changed" | "workspace.changed" }
 >;
 
 /** Lit un message reçu de l'extension. Renvoie `null` si le contenu est invalide. */

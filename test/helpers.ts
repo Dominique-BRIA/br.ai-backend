@@ -7,7 +7,7 @@ import {
   WS_PATH,
 } from "@br-ia/protocol";
 import WebSocket from "ws";
-import { buildApp } from "../src/app.ts";
+import { type AppOptions, buildApp } from "../src/app.ts";
 import { openDatabase } from "../src/db/client.ts";
 import type { Mail, Mailer } from "../src/mail/mailer.ts";
 
@@ -27,10 +27,16 @@ export class MemoryMailer implements Mailer {
   }
 }
 
-export async function startApp() {
+export async function startApp(options: Pick<AppOptions, "ai" | "serveurChain"> = {}) {
   const database = await openDatabase();
   const mailer = new MemoryMailer();
-  const app = await buildApp({ database, mailer, adminToken: ADMIN_TOKEN, helloTimeoutMs: 300 });
+  const { app, ctx, serveur } = await buildApp({
+    database,
+    mailer,
+    adminToken: ADMIN_TOKEN,
+    helloTimeoutMs: 300,
+    ...options,
+  });
   const address = await app.listen({ host: "127.0.0.1", port: 0 });
   const wsUrl = `${address.replace("http", "ws")}${WS_PATH}`;
 
@@ -124,7 +130,20 @@ export async function startApp() {
     await database.close();
   }
 
-  return { app, db: database.db, mailer, wsUrl, call, betaInvite, signUp, workspace, live, stop };
+  return {
+    app,
+    ctx,
+    serveur,
+    db: database.db,
+    mailer,
+    wsUrl,
+    call,
+    betaInvite,
+    signUp,
+    workspace,
+    live,
+    stop,
+  };
 }
 
 export type TestApp = Awaited<ReturnType<typeof startApp>>;

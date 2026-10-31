@@ -15,6 +15,13 @@
       "when": 1793457014354,
       "tag": "0001_pieces_jointes_et_machines",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793480731637,
+      "tag": "0002_memoire_et_appels_ia",
+      "breakpoints": true
     }
   ]
 }

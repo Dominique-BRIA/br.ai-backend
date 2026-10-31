@@ -2,6 +2,7 @@ import type { Attachment, Message, MessageAuthor } from "@br-ia/protocol";
 import { asc, eq, inArray } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
 import { attachments, messages, users } from "../db/schema.ts";
+import { memberIds } from "./access.ts";
 
 type MessageRow = typeof messages.$inferSelect;
 
@@ -80,4 +81,30 @@ export async function loadMessage(ctx: AppContext, id: string): Promise<Message 
 function excerpt(body: string): string {
   const flat = body.replace(/\s+/g, " ").trim();
   return flat.length > EXCERPT_LENGTH ? `${flat.slice(0, EXCERPT_LENGTH - 1)}…` : flat;
+}
+
+/** Publie un message d'un agent (serveur ou cuisinier) dans un projet et le diffuse à l'équipe. */
+export async function postAgentMessage(
+  ctx: AppContext,
+  options: {
+    projectId: string;
+    teamId: string;
+    kind: "serveur" | "cuisinier";
+    body: string;
+    replyToId?: string;
+  },
+): Promise<Message> {
+  const [row] = await ctx.db
+    .insert(messages)
+    .values({
+      projectId: options.projectId,
+      authorKind: options.kind,
+      body: options.body,
+      replyToId: options.replyToId,
+    })
+    .returning({ id: messages.id });
+  const message = row && (await loadMessage(ctx, row.id));
+  if (!message) throw new Error("Message de l'agent non enregistré.");
+  ctx.hub.sendTo(await memberIds(ctx, options.teamId), { type: "message.created", message });
+  return message;
 }
