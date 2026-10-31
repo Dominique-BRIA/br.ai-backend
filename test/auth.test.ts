@@ -85,3 +85,15 @@ describe("connexion par e-mail", () => {
     expect(response.status).toBe(401);
   });
 });
+
+describe("e-mail de connexion", () => {
+  it("contient le code en texte et dans une version HTML mise en forme", async () => {
+    const invite = await t.betaInvite();
+    await t.call("POST", "/auth/code", { body: { email: "html@exemple.org", invitationCode: invite } });
+    const mail = t.mailer.sent.findLast((candidate) => candidate.to === "html@exemple.org");
+    const code = t.mailer.lastCodeFor("html@exemple.org");
+    expect(mail?.subject).toBe(`Votre code de connexion br.ia : ${code}`);
+    expect(mail?.html).toContain(`>${code}</div>`);
+    expect(mail?.html).toContain("font-size:44px");
+  });
+});

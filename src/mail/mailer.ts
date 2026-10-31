@@ -3,7 +3,9 @@ import type { FastifyBaseLogger } from "fastify";
 export interface Mail {
   to: string;
   subject: string;
+  /** Version texte, toujours fournie (lecteurs d'e-mails simples, journal). */
   text: string;
+  html?: string;
 }
 
 export interface Mailer {
@@ -37,7 +39,13 @@ export class ResendMailer implements Mailer {
     const response = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { Authorization: `Bearer ${this.#apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ from: this.#from, to: [mail.to], subject: mail.subject, text: mail.text }),
+      body: JSON.stringify({
+        from: this.#from,
+        to: [mail.to],
+        subject: mail.subject,
+        text: mail.text,
+        ...(mail.html && { html: mail.html }),
+      }),
     });
     if (!response.ok) {
       throw new Error(`Resend a refusé l'e-mail (${response.status}) : ${await response.text()}`);

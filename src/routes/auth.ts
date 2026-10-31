@@ -11,6 +11,7 @@ import { bearerToken, openSession, revokeSession } from "../auth/sessions.ts";
 import type { AppContext } from "../context.ts";
 import { betaInvites, loginCodes, teamInvitations, teamMembers, users } from "../db/schema.ts";
 import { HttpError, parse } from "../http/errors.ts";
+import { loginCodeMail } from "../mail/templates.ts";
 import { memberIds } from "../services/access.ts";
 
 const CODE_TTL_MS = 10 * 60_000;
@@ -22,7 +23,10 @@ type Invitation = { kind: "beta" | "team"; id: string; teamId?: string };
 export function authRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.post("/auth/code", async (request): Promise<RequestCodeResponse> => {
     const { email, invitationCode } = parse(requestCodeBody, request.body);
-    const [existing] = await ctx.db.select({ id: users.id }).from(users).where(eq(users.email, email));
+    const [existing] = await ctx.db
+      .select({ id: users.id, locale: users.locale })
+      .from(users)
+      .where(eq(users.email, email));
 
     let invitation: Invitation | null = null;
     if (!existing) {
@@ -60,11 +64,7 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext): void {
       invitationKind: invitation?.kind,
       invitationId: invitation?.id,
     });
-    await ctx.mailer.send({
-      to: email,
-      subject: `Votre code de connexion br.ia : ${code}`,
-      text: `Votre code de connexion à br.ia : ${code}\n\nIl est valable 10 minutes. Si vous n'avez rien demandé, ignorez cet e-mail.`,
-    });
+    await ctx.mailer.send(loginCodeMail(email, code, existing?.locale ?? "fr"));
     return { newAccount: !existing };
   });
 
