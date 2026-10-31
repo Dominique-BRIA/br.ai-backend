@@ -21,6 +21,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1161.0",
     "@br-ia/protocol": "*",
     "@electric-sql/pglite": "^0.5.14",
     "@fastify/websocket": "^11.3.5",

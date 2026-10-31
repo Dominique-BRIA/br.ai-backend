@@ -11,6 +11,13 @@ const schema = z.object({
   /** Clé Resend. Sans elle, les e-mails sont seulement écrits dans le journal. */
   RESEND_API_KEY: z.string().optional(),
   MAIL_FROM: z.string().default("br.ia <onboarding@resend.dev>"),
+  /** Dossier des pièces jointes quand Backblaze B2 n'est pas configuré. */
+  FILES_DIR: z.string().default(".data/files"),
+  /** Backblaze B2 : les quatre variables, ou aucune. */
+  B2_KEY_ID: z.string().optional(),
+  B2_APPLICATION_KEY: z.string().optional(),
+  B2_BUCKET: z.string().optional(),
+  B2_ENDPOINT: z.url().optional(),
 });
 
 export type Config = z.infer<typeof schema>;

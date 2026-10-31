@@ -6,9 +6,11 @@ import {
   parseClientMessage,
   type ServerMessage,
 } from "@br-ia/protocol";
+import { eq } from "drizzle-orm";
 import type { WebSocket } from "ws";
 import { findSession } from "../auth/sessions.ts";
 import type { AppContext } from "../context.ts";
+import { sessions } from "../db/schema.ts";
 import type { LiveConnection } from "../realtime/hub.ts";
 import { teammateIds } from "../services/access.ts";
 
@@ -96,7 +98,18 @@ export function handleConnection(
       }
       if (socket.readyState !== socket.OPEN) return;
 
-      live = { connectionId, userId: session.userId, machine: message.machine, send };
+      await ctx.db
+        .update(sessions)
+        .set({ os: message.machine.os, editor: message.machine.editor })
+        .where(eq(sessions.id, session.id));
+      live = {
+        connectionId,
+        userId: session.userId,
+        sessionId: session.id,
+        machine: message.machine,
+        send,
+        close: () => socket.close(CLOSE_CODES.unauthenticated, "session_revoked"),
+      };
       const firstMachine = ctx.hub.add(live);
       ctx.log.info({ connectionId, userId: session.userId, machine: message.machine }, "machine connectée");
       send({ type: "welcome", protocolVersion: PROTOCOL_VERSION, serverVersion, connectionId });

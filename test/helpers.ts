@@ -124,7 +124,7 @@ export async function startApp() {
     await database.close();
   }
 
-  return { app, mailer, wsUrl, call, betaInvite, signUp, workspace, live, stop };
+  return { app, db: database.db, mailer, wsUrl, call, betaInvite, signUp, workspace, live, stop };
 }
 
 export type TestApp = Awaited<ReturnType<typeof startApp>>;

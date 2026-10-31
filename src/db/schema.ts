@@ -38,6 +38,9 @@ export const sessions = pgTable(
     /** Empreinte du jeton de session : le jeton lui-même n'est jamais stocké. */
     tokenHash: text().notNull().unique(),
     machineId: text().notNull(),
+    /** Système et éditeur de la machine, mis à jour à chaque connexion temps réel. */
+    os: text(),
+    editor: text(),
     createdAt: createdAt(),
     lastSeenAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
     revokedAt: timestamp({ withTimezone: true }),
@@ -143,4 +146,27 @@ export const messages = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index().on(t.projectId, t.createdAt)],
+);
+
+/**
+ * Pièces jointes. Le contenu est rangé dans le stockage (Backblaze B2, ou le disque en
+ * développement) sous `storageKey`. Une pièce envoyée mais jamais jointe à un message
+ * garde `messageId` vide.
+ */
+export const attachments = pgTable(
+  "attachments",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    projectId: uuid()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    uploaderId: uuid().references(() => users.id, { onDelete: "set null" }),
+    messageId: uuid().references(() => messages.id, { onDelete: "set null" }),
+    name: text().notNull(),
+    contentType: text().notNull(),
+    size: integer().notNull(),
+    storageKey: text().notNull().unique(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.messageId)],
 );

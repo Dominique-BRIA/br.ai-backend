@@ -8,18 +8,23 @@ import { registerErrorHandler } from "./http/errors.ts";
 import { LogMailer, type Mailer } from "./mail/mailer.ts";
 import { RealtimeHub } from "./realtime/hub.ts";
 import { adminRoutes } from "./routes/admin.ts";
+import { attachmentRoutes } from "./routes/attachments.ts";
 import { authRoutes } from "./routes/auth.ts";
+import { meRoutes } from "./routes/me.ts";
 import { messageRoutes } from "./routes/messages.ts";
 import { teamRoutes } from "./routes/teams.ts";
+import { MemoryStorage, type Storage } from "./storage/storage.ts";
 import { handleConnection } from "./ws/connection.ts";
 
-export const SERVER_VERSION = "0.2.0";
+export const SERVER_VERSION = "0.3.0";
 
 export interface AppOptions {
   database: Database;
   logger?: FastifyServerOptions["logger"];
   /** Par défaut, les e-mails sont écrits dans le journal. */
   mailer?: Mailer;
+  /** Par défaut, les fichiers sont gardés en mémoire (tests). */
+  storage?: Storage;
   adminToken?: string;
   helloTimeoutMs?: number;
 }
@@ -30,6 +35,7 @@ export async function buildApp(options: AppOptions) {
     db: options.database.db,
     hub: new RealtimeHub(),
     mailer: options.mailer ?? new LogMailer(app.log),
+    storage: options.storage ?? new MemoryStorage(),
     log: app.log,
   };
 
@@ -55,6 +61,8 @@ export async function buildApp(options: AppOptions) {
     requireAuth(scope, ctx);
     teamRoutes(scope, ctx);
     messageRoutes(scope, ctx);
+    attachmentRoutes(scope, ctx);
+    meRoutes(scope, ctx);
   });
   await app.register(async (scope) => adminRoutes(scope, ctx, options.adminToken));
 

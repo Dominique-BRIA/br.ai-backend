@@ -57,6 +57,18 @@ export const messageAuthor = z.discriminatedUnion("kind", [
 ]);
 export type MessageAuthor = z.infer<typeof messageAuthor>;
 
+/** Fichier joint à un message. Son contenu se télécharge par GET /attachments/:id. */
+export const attachment = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  contentType: z.string(),
+  size: z.number().int().nonnegative(),
+});
+export type Attachment = z.infer<typeof attachment>;
+
+export const ATTACHMENT_MAX_BYTES = 20 * 1024 * 1024;
+export const ATTACHMENTS_PER_MESSAGE = 10;
+
 export const message = z.object({
   id: z.uuid(),
   projectId: z.uuid(),
@@ -73,8 +85,23 @@ export const message = z.object({
     .nullable(),
   /** Membres mentionnés (`@Nom`). */
   mentions: z.array(z.uuid()),
+  attachments: z.array(attachment),
   createdAt: z.iso.datetime(),
 });
 export type Message = z.infer<typeof message>;
 
 export const MESSAGE_MAX_LENGTH = 20_000;
+
+/** Une machine connectée au compte (une session). */
+export const machineSession = z.object({
+  id: z.uuid(),
+  os: z.string().nullable(),
+  editor: z.string().nullable(),
+  createdAt: z.iso.datetime(),
+  lastSeenAt: z.iso.datetime(),
+  /** La session de la machine qui fait la demande. */
+  current: z.boolean(),
+  /** Vrai si cette machine est connectée en ce moment. */
+  online: z.boolean(),
+});
+export type MachineSession = z.infer<typeof machineSession>;

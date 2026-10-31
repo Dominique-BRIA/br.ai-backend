@@ -3,8 +3,11 @@ import type { MachineInfo, ServerEvent } from "@br-ia/protocol";
 export interface LiveConnection {
   connectionId: string;
   userId: string;
+  sessionId: string;
   machine: MachineInfo;
   send(event: ServerEvent): void;
+  /** Ferme la connexion, par exemple quand sa session est révoquée. */
+  close(): void;
 }
 
 /**
@@ -34,6 +37,18 @@ export class RealtimeHub {
     if (connections.size > 0) return false;
     this.#byUser.delete(connection.userId);
     return true;
+  }
+
+  /** Sessions dont une machine est connectée en ce moment. */
+  onlineSessions(userId: string): Set<string> {
+    return new Set([...(this.#byUser.get(userId)?.values() ?? [])].map((connection) => connection.sessionId));
+  }
+
+  /** Ferme les connexions d'une session révoquée. */
+  closeSession(userId: string, sessionId: string): void {
+    for (const connection of [...(this.#byUser.get(userId)?.values() ?? [])]) {
+      if (connection.sessionId === sessionId) connection.close();
+    }
   }
 
   isOnline(userId: string): boolean {

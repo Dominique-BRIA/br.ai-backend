@@ -4,6 +4,7 @@ import { loadConfig } from "./config.ts";
 import { openDatabase } from "./db/client.ts";
 import { betaInvites } from "./db/schema.ts";
 import { ResendMailer } from "./mail/mailer.ts";
+import { B2Storage, DiskStorage } from "./storage/storage.ts";
 
 /** Code d'invitation créé automatiquement en développement, pour tester sans tableau de bord. */
 const DEV_INVITE_CODE = "BETA-DEV";
@@ -11,7 +12,18 @@ const DEV_INVITE_CODE = "BETA-DEV";
 const config = loadConfig();
 const database = await openDatabase(config.PGLITE_DIR);
 
+const b2 =
+  config.B2_KEY_ID && config.B2_APPLICATION_KEY && config.B2_BUCKET && config.B2_ENDPOINT
+    ? {
+        keyId: config.B2_KEY_ID,
+        applicationKey: config.B2_APPLICATION_KEY,
+        bucket: config.B2_BUCKET,
+        endpoint: config.B2_ENDPOINT,
+      }
+    : null;
+
 const app = await buildApp({
+  storage: b2 ? new B2Storage(b2) : new DiskStorage(config.FILES_DIR),
   database,
   adminToken: config.ADMIN_TOKEN,
   mailer: config.RESEND_API_KEY ? new ResendMailer(config.RESEND_API_KEY, config.MAIL_FROM) : undefined,
@@ -33,6 +45,11 @@ if (config.NODE_ENV === "development") {
   }
   app.log.info(`Code d'invitation de développement : ${DEV_INVITE_CODE}`);
 }
+app.log.info(
+  b2
+    ? `Pièces jointes sur Backblaze B2 (${b2.bucket}).`
+    : `Pièces jointes sur le disque (${config.FILES_DIR}).`,
+);
 
 const shutdown = async () => {
   await app.close();

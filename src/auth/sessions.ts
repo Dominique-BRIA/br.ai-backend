@@ -9,6 +9,8 @@ declare module "fastify" {
   interface FastifyRequest {
     /** Membre authentifié par le jeton de session. */
     userId: string;
+    /** Session (machine) qui fait la demande. */
+    sessionId: string;
   }
 }
 
@@ -45,10 +47,12 @@ export function bearerToken(request: FastifyRequest): string | null {
 /** Ajoute aux routes de ce contexte l'obligation d'être connecté. */
 export function requireAuth(app: FastifyInstance, ctx: AppContext): void {
   app.decorateRequest("userId", "");
+  app.decorateRequest("sessionId", "");
   app.addHook("preHandler", async (request) => {
     const token = bearerToken(request);
     const session = token ? await findSession(ctx, token) : null;
     if (!session) throw new HttpError(401, "unauthenticated", "Connexion requise.");
     request.userId = session.userId;
+    request.sessionId = session.id;
   });
 }

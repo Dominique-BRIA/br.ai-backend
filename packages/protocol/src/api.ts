@@ -1,5 +1,14 @@
 import { z } from "zod";
-import { MESSAGE_MAX_LENGTH, message, team, user } from "./models.ts";
+import {
+  ATTACHMENTS_PER_MESSAGE,
+  attachment,
+  locale,
+  MESSAGE_MAX_LENGTH,
+  machineSession,
+  message,
+  team,
+  user,
+} from "./models.ts";
 
 /**
  * L'API HTTP du serveur. Chaque route a son schéma de requête et de réponse.
@@ -22,6 +31,7 @@ export const apiErrorCode = z.enum([
   "display_name_required",
   "chef_must_transfer",
   "already_member",
+  "file_too_large",
 ]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 
@@ -120,10 +130,46 @@ export const listMessagesResponse = z.object({
 export type ListMessagesResponse = z.infer<typeof listMessagesResponse>;
 
 /** POST /projects/:projectId/messages */
-export const sendMessageBody = z.object({
-  body: z.string().trim().min(1).max(MESSAGE_MAX_LENGTH),
-  replyToId: z.uuid().optional(),
-  mentions: z.array(z.uuid()).max(50).default([]),
-});
+export const sendMessageBody = z
+  .object({
+    body: z.string().trim().max(MESSAGE_MAX_LENGTH).default(""),
+    replyToId: z.uuid().optional(),
+    mentions: z.array(z.uuid()).max(50).default([]),
+    /** Pièces jointes déjà envoyées par POST /projects/:projectId/attachments. */
+    attachmentIds: z.array(z.uuid()).max(ATTACHMENTS_PER_MESSAGE).default([]),
+  })
+  .refine((value) => value.body.length > 0 || value.attachmentIds.length > 0, {
+    message: "Un message doit contenir du texte ou une pièce jointe.",
+  });
 export type SendMessageBody = z.input<typeof sendMessageBody>;
 export const messageResponse = z.object({ message });
+
+// Pièces jointes
+
+/**
+ * POST /projects/:projectId/attachments — le corps est le contenu brut du fichier
+ * (`Content-Type: application/octet-stream`). Le nom (encodé avec encodeURIComponent)
+ * et le type du fichier passent dans les en-têtes ci-dessous.
+ */
+export const ATTACHMENT_NAME_HEADER = "x-file-name";
+export const ATTACHMENT_TYPE_HEADER = "x-file-type";
+export const attachmentResponse = z.object({ attachment });
+export type AttachmentResponse = z.infer<typeof attachmentResponse>;
+
+// Compte
+
+/** PATCH /me */
+export const updateMeBody = z.object({
+  displayName: name.optional(),
+  locale: locale.optional(),
+});
+export type UpdateMeBody = z.input<typeof updateMeBody>;
+export const meResponse = z.object({ user });
+
+/** GET /me/sessions — les machines connectées au compte. DELETE /me/sessions/:sessionId la déconnecte. */
+export const sessionsResponse = z.object({ sessions: z.array(machineSession) });
+export type SessionsResponse = z.infer<typeof sessionsResponse>;
+
+/** DELETE /me — supprime le compte. Il faut recopier son adresse e-mail. */
+export const deleteAccountBody = z.object({ confirmEmail: email });
+export type DeleteAccountBody = z.input<typeof deleteAccountBody>;

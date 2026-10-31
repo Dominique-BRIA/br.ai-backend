@@ -1,13 +1,13 @@
-import type { Message, MessageAuthor } from "@br-ia/protocol";
-import { eq, inArray } from "drizzle-orm";
+import type { Attachment, Message, MessageAuthor } from "@br-ia/protocol";
+import { asc, eq, inArray } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
-import { messages, users } from "../db/schema.ts";
+import { attachments, messages, users } from "../db/schema.ts";
 
 type MessageRow = typeof messages.$inferSelect;
 
 const EXCERPT_LENGTH = 140;
 
-/** Transforme des lignes de la table `messages` en messages du protocole (auteurs, réponses). */
+/** Transforme des lignes de la table `messages` en messages du protocole (auteurs, réponses, pièces jointes). */
 export async function toMessages(ctx: AppContext, rows: MessageRow[]): Promise<Message[]> {
   const parentIds = [...new Set(rows.flatMap((row) => (row.replyToId ? [row.replyToId] : [])))];
   const parents =
@@ -36,6 +36,26 @@ export async function toMessages(ctx: AppContext, rows: MessageRow[]): Promise<M
   };
   const parentsById = new Map(parents.map((parent) => [parent.id, parent]));
 
+  const files = new Map<string, Attachment[]>();
+  if (rows.length > 0) {
+    const attached = await ctx.db
+      .select()
+      .from(attachments)
+      .where(
+        inArray(
+          attachments.messageId,
+          rows.map((row) => row.id),
+        ),
+      )
+      .orderBy(asc(attachments.createdAt));
+    for (const file of attached) {
+      if (!file.messageId) continue;
+      const list = files.get(file.messageId) ?? [];
+      list.push({ id: file.id, name: file.name, contentType: file.contentType, size: file.size });
+      files.set(file.messageId, list);
+    }
+  }
+
   return rows.map((row) => {
     const parent = row.replyToId ? parentsById.get(row.replyToId) : undefined;
     return {
@@ -45,6 +65,7 @@ export async function toMessages(ctx: AppContext, rows: MessageRow[]): Promise<M
       body: row.body,
       replyTo: parent ? { id: parent.id, author: author(parent), excerpt: excerpt(parent.body) } : null,
       mentions: row.mentions,
+      attachments: files.get(row.id) ?? [],
       createdAt: row.createdAt.toISOString(),
     };
   });
