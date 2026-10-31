@@ -169,6 +169,24 @@ describe("agent serveur", () => {
   });
 });
 
+describe("notes ajoutées à la main", () => {
+  it("un membre ajoute une note à la mémoire du projet", async () => {
+    const created = await t.call<{ item: { type: string; text: string; proposedBy: { kind: string } } }>(
+      "POST",
+      `/projects/${projectId}/memory`,
+      { token: ali.token, body: { type: "question", text: "Quel hébergeur pour la bêta ?" } },
+    );
+    expect(created.status).toBe(200);
+    expect(created.json.item).toMatchObject({ type: "question", proposedBy: { kind: "member" } });
+    expect((await memory()).some((item) => item.text === "Quel hébergeur pour la bêta ?")).toBe(true);
+  });
+
+  it("indique la dernière activité de chaque membre", async () => {
+    const team = (await t.workspace(chef.token)).teams[0];
+    expect(team?.members.every((member) => typeof member.lastSeenAt === "string")).toBe(true);
+  });
+});
+
 describe("couche commune d'IA", () => {
   it("réessaie une limite de débit, passe au modèle suivant en cas d'échec ou de réponse inexploitable, et journalise chaque appel", async () => {
     const answers = [

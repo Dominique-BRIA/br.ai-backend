@@ -1,4 +1,4 @@
-import { type MemoryItem, type MemoryResponse, updateMemoryBody } from "@br-ia/protocol";
+import { createMemoryBody, type MemoryItem, type MemoryResponse, updateMemoryBody } from "@br-ia/protocol";
 import { eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -6,7 +6,13 @@ import type { AppContext } from "../context.ts";
 import { memoryItems, projects, users } from "../db/schema.ts";
 import { forbidden, notFound, parse } from "../http/errors.ts";
 import { requireProject, roleIn } from "../services/access.ts";
-import { announceMemoryChange, listMemory, setMemoryStatus, toMemoryItems } from "../services/memory.ts";
+import {
+  addMemory,
+  announceMemoryChange,
+  listMemory,
+  setMemoryStatus,
+  toMemoryItems,
+} from "../services/memory.ts";
 import { postAgentMessage } from "../services/messages.ts";
 
 const projectParams = z.object({ projectId: z.uuid() });
@@ -17,6 +23,25 @@ export function memoryRoutes(app: FastifyInstance, ctx: AppContext): void {
     const { projectId } = parse(projectParams, request.params);
     await requireProject(ctx, request.userId, projectId);
     return { items: await listMemory(ctx, projectId) };
+  });
+
+  /** Un membre ajoute lui-même une note (décision, question, tâche, compromis). */
+  app.post("/projects/:projectId/memory", async (request): Promise<{ item: MemoryItem }> => {
+    const { projectId } = parse(projectParams, request.params);
+    const { type, text } = parse(createMemoryBody, request.body);
+    const { project } = await requireProject(ctx, request.userId, projectId);
+    const id = await addMemory(ctx, {
+      projectId,
+      type,
+      text,
+      sourceMessageId: null,
+      proposedBy: { kind: "member", userId: request.userId },
+    });
+    await announceMemoryChange(ctx, project.teamId, projectId);
+    const [row] = await ctx.db.select().from(memoryItems).where(eq(memoryItems.id, id));
+    const [item] = await toMemoryItems(ctx, row ? [row] : []);
+    if (!item) throw notFound("Élément introuvable.");
+    return { item };
   });
 
   /**

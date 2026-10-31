@@ -22,6 +22,8 @@ export const member = z.object({
   role: teamRole,
   /** Vrai si au moins une machine de ce membre est connectée. */
   online: z.boolean(),
+  /** Dernière activité connue d'une de ses machines. */
+  lastSeenAt: z.iso.datetime().nullable(),
 });
 export type Member = z.infer<typeof member>;
 

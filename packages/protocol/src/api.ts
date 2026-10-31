@@ -7,6 +7,7 @@ import {
   machineSession,
   memoryItem,
   memoryStatus,
+  memoryType,
   message,
   order,
   team,
@@ -182,6 +183,13 @@ export type DeleteAccountBody = z.input<typeof deleteAccountBody>;
 /** GET /projects/:projectId/memory */
 export const memoryResponse = z.object({ items: z.array(memoryItem) });
 export type MemoryResponse = z.infer<typeof memoryResponse>;
+
+/** POST /projects/:projectId/memory — un membre ajoute lui-même une note à la mémoire. */
+export const createMemoryBody = z.object({
+  type: memoryType,
+  text: z.string().trim().min(1).max(500),
+});
+export type CreateMemoryBody = z.input<typeof createMemoryBody>;
 
 /**
  * PATCH /memory/:itemId — changer le statut d'un élément.
