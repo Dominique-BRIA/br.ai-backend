@@ -1,8 +1,8 @@
 import { WS_PATH } from "@br-ia/protocol";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyServerOptions } from "fastify";
-import type { Database } from "./db/client.js";
-import { ConnectionRegistry, handleConnection } from "./ws/connection.js";
+import type { Database } from "./db/client.ts";
+import { ConnectionRegistry, handleConnection } from "./ws/connection.ts";
 
 export const SERVER_VERSION = "0.1.0";
 

@@ -3,7 +3,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
-import * as schema from "./schema.js";
+import * as schema from "./schema.ts";
 
 export type Database = Awaited<ReturnType<typeof openDatabase>>;
 

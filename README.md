@@ -18,21 +18,21 @@ Le serveur écoute sur `http://127.0.0.1:4000`. Vérification : `http://127.0.0.
 
 ## Commandes
 
-| Commande | Rôle |
-| --- | --- |
-| `npm run dev` | Serveur en développement, relancé à chaque modification |
-| `npm run build` puis `npm start` | Version construite, dans `dist/` |
-| `npm test` | Tests |
-| `npm run typecheck` | Vérification des types |
-| `npm run check` | Vérification du style (Biome) ; `npm run format` corrige |
-| `npm run db:generate` | Génère une migration après une modification de `src/db/schema.ts` |
+| Commande                         | Rôle                                                              |
+| -------------------------------- | ----------------------------------------------------------------- |
+| `npm run dev`                    | Serveur en développement, relancé à chaque modification           |
+| `npm run build` puis `npm start` | Version construite, dans `dist/`                                  |
+| `npm test`                       | Tests                                                             |
+| `npm run typecheck`              | Vérification des types                                            |
+| `npm run check`                  | Vérification du style (Biome) ; `npm run format` corrige          |
+| `npm run db:generate`            | Génère une migration après une modification de `src/db/schema.ts` |
 
 ## Organisation
 
-| Dossier | Contenu |
-| --- | --- |
-| `src/` | Le serveur : `app.ts` (routes), `ws/` (connexions des extensions), `db/` (schéma et accès à la base) |
-| `packages/protocol/` | Le protocole partagé avec l'extension et le site (`@br-ia/protocol`) |
-| `drizzle/` | Migrations de la base, appliquées au démarrage |
-| `test/` | Tests |
-| `docs/` | Documents du projet |
+| Dossier              | Contenu                                                                                              |
+| -------------------- | ---------------------------------------------------------------------------------------------------- |
+| `src/`               | Le serveur : `app.ts` (routes), `ws/` (connexions des extensions), `db/` (schéma et accès à la base) |
+| `packages/protocol/` | Le protocole partagé avec l'extension et le site (`@br-ia/protocol`)                                 |
+| `drizzle/`           | Migrations de la base, appliquées au démarrage                                                       |
+| `test/`              | Tests                                                                                                |
+| `docs/`              | Documents du projet                                                                                  |

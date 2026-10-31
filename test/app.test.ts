@@ -1,9 +1,9 @@
 import { PROTOCOL_VERSION, parseServerMessage, type ServerMessage, WS_PATH } from "@br-ia/protocol";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { buildApp } from "../src/app.js";
-import { openDatabase } from "../src/db/client.js";
-import { CLOSE_CODES } from "../src/ws/connection.js";
+import { buildApp } from "../src/app.ts";
+import { openDatabase } from "../src/db/client.ts";
+import { CLOSE_CODES } from "../src/ws/connection.ts";
 
 const database = await openDatabase();
 const app = await buildApp({ database, helloTimeoutMs: 200 });

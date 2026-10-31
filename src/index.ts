@@ -1,6 +1,6 @@
-import { buildApp } from "./app.js";
-import { loadConfig } from "./config.js";
-import { openDatabase } from "./db/client.js";
+import { buildApp } from "./app.ts";
+import { loadConfig } from "./config.ts";
+import { openDatabase } from "./db/client.ts";
 
 const config = loadConfig();
 const database = await openDatabase(config.PGLITE_DIR);
