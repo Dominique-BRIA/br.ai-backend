@@ -36,7 +36,7 @@ Elle s'appuie sur les recommandations officielles de VS Code et sur des analyses
 
 On décide ces valeurs **avant** de dessiner un écran, et on ne les change pas écran par écran.
 
-- **Couleur de marque :** une seule, choisie volontairement et **pas violette**. Elle sert aux actions principales et aux liens, nulle part ailleurs. Proposition à valider : un rouge brique, en clin d'œil à la cuisine (`oklch(58% 0.15 35)`).
+- **Couleurs de marque :** celles du logo (fichiers dans `br.ai-frontendweb/public/`). Le **turquoise `#13B0BF`** sert aux actions principales, à l'onglet actif, aux liens et aux messages de l'utilisateur (`#0B7D89` sur les fonds, pour un texte blanc lisible). L'**orange `#FDA43C`** est réservé à l'attente et aux alertes. Le fond du logo est un **bleu nuit `#0A192C`**. Choix validé par Dominique le 31 octobre 2026, avec la maquette du panneau de chat.
 - **Couleurs d'état :** succès, avertissement, erreur, information. Elles servent uniquement à signaler un état.
 - **Gris :** une échelle de gris neutres pour le texte, les bordures et les fonds.
 - **Arrondis :** 4 px pour les champs et les boutons, 6 px pour les panneaux. La forme de pilule est réservée aux étiquettes.
