@@ -22,6 +22,8 @@ const MAX_TURNS = 40;
 const TOOL_TIMEOUT_MS = 15 * 60_000;
 /** Taille maximale d'une sortie d'outil renvoyée à l'IA. */
 const MAX_TOOL_OUTPUT = 15_000;
+const WAITING_TEXT =
+  "En attente d'une machine : associez un dossier à ce projet sur votre machine (clic droit sur le projet dans la vue Équipes), ou demandez à un coéquipier de prêter la sienne.";
 /** Nombre d'étapes gardées dans la commande. */
 const MAX_STEPS = 60;
 
@@ -206,9 +208,19 @@ export class Kitchen implements KitchenHooks {
     for (const { order, teamId } of pending) {
       if (this.#active.has(order.projectId)) continue;
       const machine = await this.#pickMachine(order, teamId);
-      if (!machine) continue;
+      if (!machine) {
+        await this.#explainWaiting(order, teamId);
+        continue;
+      }
       this.#start(order, teamId, machine);
     }
+  }
+
+  /** Dit une fois pourquoi la commande attend, et comment la débloquer. */
+  async #explainWaiting(order: OrderRow, teamId: string): Promise<void> {
+    if (order.steps.at(-1)?.text === WAITING_TEXT) return;
+    await this.#step(order.id, "info", WAITING_TEXT);
+    await this.#publish(order.id, teamId);
   }
 
   /** La machine du demandeur d'abord ; sinon celle d'un membre qui prête la sienne. */

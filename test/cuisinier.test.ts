@@ -160,7 +160,10 @@ describe("cuisinier", () => {
     await live.next("tool.call");
     live.socket.close();
     await waitFor(async () => (await orders())[0]?.status === "pending");
-    expect((await orders())[0]?.steps.at(-1)?.text).toContain("La machine s'est déconnectée");
+    const steps = (await orders())[0]?.steps.map((step) => step.text) ?? [];
+    expect(steps.some((text) => text.includes("La machine s'est déconnectée"))).toBe(true);
+    // Sans autre machine, la commande explique comment la débloquer.
+    expect(steps.at(-1)).toContain("associez un dossier à ce projet");
   });
 });
 
