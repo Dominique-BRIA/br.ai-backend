@@ -4,6 +4,7 @@ import {
   boolean,
   index,
   integer,
+  jsonb,
   pgEnum,
   pgTable,
   primaryKey,
@@ -21,6 +22,7 @@ export const authorKind = pgEnum("author_kind", ["member", "serveur", "cuisinier
 export const invitationKind = pgEnum("invitation_kind", ["beta", "team"]);
 export const memoryType = pgEnum("memory_type", ["decision", "question", "task", "compromise"]);
 export const memoryStatus = pgEnum("memory_status", ["open", "resolved", "stopped"]);
+export const orderStatus = pgEnum("order_status", ["pending", "running", "done", "failed", "stopped"]);
 
 export const users = pgTable("users", {
   id: uuid().primaryKey().defaultRandom(),
@@ -216,4 +218,37 @@ export const aiCalls = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index().on(t.teamId, t.createdAt)],
+);
+
+export interface OrderStepRow {
+  at: string;
+  kind: "info" | "read" | "write" | "command" | "error";
+  text: string;
+}
+
+/** Commandes passées au cuisinier. */
+export const orders = pgTable(
+  "orders",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    projectId: uuid()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    number: integer().notNull(),
+    title: text().notNull(),
+    brief: text().notNull(),
+    status: orderStatus().notNull().default("pending"),
+    requestedByUserId: uuid().references(() => users.id, { onDelete: "set null" }),
+    sourceMessageId: uuid().references(() => messages.id, { onDelete: "set null" }),
+    /** Tâche de la mémoire correspondante, résolue quand la commande aboutit. */
+    memoryItemId: uuid().references(() => memoryItems.id, { onDelete: "set null" }),
+    machineUserId: uuid().references(() => users.id, { onDelete: "set null" }),
+    machineSessionId: uuid().references(() => sessions.id, { onDelete: "set null" }),
+    summary: text(),
+    changedFiles: text().array().notNull().default(sql`'{}'::text[]`),
+    steps: jsonb().$type<OrderStepRow[]>().notNull().default([]),
+    createdAt: createdAt(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex().on(t.projectId, t.number), index().on(t.status)],
 );

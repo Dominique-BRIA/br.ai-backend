@@ -61,15 +61,20 @@ export async function addMemory(
     sourceMessageId: string | null;
     proposedBy: { kind: "member"; userId: string } | { kind: "serveur" };
   },
-): Promise<void> {
-  await ctx.db.insert(memoryItems).values({
-    projectId: item.projectId,
-    type: item.type,
-    text: item.text,
-    sourceMessageId: item.sourceMessageId,
-    proposedByKind: item.proposedBy.kind,
-    proposedByUserId: item.proposedBy.kind === "member" ? item.proposedBy.userId : null,
-  });
+): Promise<string> {
+  const [row] = await ctx.db
+    .insert(memoryItems)
+    .values({
+      projectId: item.projectId,
+      type: item.type,
+      text: item.text,
+      sourceMessageId: item.sourceMessageId,
+      proposedByKind: item.proposedBy.kind,
+      proposedByUserId: item.proposedBy.kind === "member" ? item.proposedBy.userId : null,
+    })
+    .returning({ id: memoryItems.id });
+  if (!row) throw new Error("Élément de mémoire non enregistré.");
+  return row.id;
 }
 
 export async function setMemoryStatus(ctx: AppContext, id: string, status: MemoryStatus): Promise<void> {

@@ -23,15 +23,18 @@ const b2 =
       }
     : null;
 
-const serveurChain = parseChain(config.AI_SERVEUR_CHAIN, {
+const aiKeys = {
   gemini: config.GEMINI_API_KEY,
   groq: config.GROQ_API_KEY,
   mistral: config.MISTRAL_API_KEY,
   openrouter: config.OPENROUTER_API_KEY,
-});
+};
+const serveurChain = parseChain(config.AI_SERVEUR_CHAIN, aiKeys);
+const cuisinierChain = parseChain(config.AI_CUISINIER_CHAIN, aiKeys);
 
 const { app } = await buildApp({
   serveurChain,
+  cuisinierChain,
   storage: b2 ? new B2Storage(b2) : new DiskStorage(config.FILES_DIR),
   database,
   adminToken: config.ADMIN_TOKEN,
@@ -56,6 +59,9 @@ if (config.NODE_ENV === "development") {
 }
 app.log.info(
   `Agent serveur : ${serveurChain.map((choice) => `${choice.provider.name}/${choice.model}`).join(", ") || "désactivé"}`,
+);
+app.log.info(
+  `Cuisinier : ${cuisinierChain.map((choice) => `${choice.provider.name}/${choice.model}`).join(", ") || "désactivé"}`,
 );
 app.log.info(
   b2

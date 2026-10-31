@@ -6,6 +6,7 @@ import type { AppContext } from "../context.ts";
 import { messages, teamMembers, users } from "../db/schema.ts";
 import { addMemory, announceMemoryChange, listMemory, setMemoryStatus } from "../services/memory.ts";
 import { postAgentMessage, toMessages } from "../services/messages.ts";
+import type { Kitchen } from "./cuisinier.ts";
 
 /** Nombre de messages récents donnés à l'agent comme contexte. */
 const HISTORY = 30;
@@ -32,6 +33,14 @@ const output = z.object({
       ]),
     )
     .default([]),
+  /** Commande à passer au cuisinier, quand la demande est assez précise. */
+  order: z
+    .object({
+      title: z.string().trim().min(1).max(120),
+      brief: z.string().trim().min(1).max(6000),
+    })
+    .nullable()
+    .default(null),
 });
 export type ServeurOutput = z.infer<typeof output>;
 
@@ -53,7 +62,9 @@ Pour chaque nouveau message, classe-le dans une catégorie :
 - "question" : le message t'est adressé, explicitement (@bria) ou implicitement (une question posée à l'IA, une demande d'aide, de synthèse ou de point sur le projet). Tu réponds.
 - "decision" : l'équipe vient de décider quelque chose. Tu l'ajoutes à la mémoire (type "decision") sans répondre.
 - "contradiction" : le message contredit une décision de la mémoire ou la position d'un autre membre. Tu réponds en signalant le désaccord avec tact, et tu proposes un compromis concret ; tu ajoutes ce compromis à la mémoire (type "compromise").
-- "request" : on demande un livrable (code, document, schéma…). Tu réponds en reformulant la commande et en demandant les précisions qui manquent ; tu l'ajoutes à la mémoire (type "task"). Le cuisinier, l'agent qui produira les livrables, n'est pas encore disponible : précise que la commande est notée et sera réalisée dès son arrivée.
+- "request" : on demande un livrable (code, document, schéma…) que le cuisinier (l'agent qui code sur la machine du demandeur) peut réaliser dans le dossier du projet. Tu l'ajoutes à la mémoire (type "task").
+  - Si la demande est assez précise pour être réalisée, passe la commande : remplis "order" avec un titre court et des consignes complètes et autonomes pour le cuisinier (objectif, fichiers ou parties concernés s'ils sont connus, contraintes, critères de réussite, décisions de la mémoire à respecter). Ta réponse indique en une phrase que la commande part en cuisine.
+  - Sinon, laisse "order" à null et pose les questions qui manquent, brièvement.
 
 Mémoire du projet :
 - "add" ajoute un élément : decision, question (question restée ouverte), task (tâche à faire), compromise (compromis proposé). Texte court, précis, autonome (compréhensible sans le chat).
@@ -68,7 +79,7 @@ Ta réponse (quand tu réponds) :
 Si le message contient @bria, tu dois répondre.
 
 Renvoie uniquement un objet JSON de la forme :
-{"category": "...", "reply": "texte ou null", "memory": [{"op": "add", "type": "...", "text": "..."}, {"op": "resolve", "ref": "M1", "status": "resolved"}]}`;
+{"category": "...", "reply": "texte ou null", "memory": [{"op": "add", "type": "...", "text": "..."}, {"op": "resolve", "ref": "M1", "status": "resolved"}], "order": null ou {"title": "...", "brief": "..."}}`;
 
 interface Member {
   userId: string;
@@ -85,11 +96,13 @@ export class ServeurAgent {
   private readonly ctx: AppContext;
   private readonly ai: Ai;
   private readonly chain: ModelChoice[];
+  private readonly kitchen: Kitchen | null;
 
-  constructor(ctx: AppContext, ai: Ai, chain: ModelChoice[]) {
+  constructor(ctx: AppContext, ai: Ai, chain: ModelChoice[], kitchen: Kitchen | null = null) {
     this.ctx = ctx;
     this.ai = ai;
     this.chain = chain;
+    this.kitchen = kitchen;
   }
 
   /** Programme le traitement d'un message ; renvoie la promesse de fin (utile aux tests). */
@@ -160,9 +173,10 @@ export class ServeurAgent {
 
     const isChef = members.find((member) => member.userId === author.userId)?.role === "chef";
     let memoryChanged = false;
+    let taskId: string | null = null;
     for (const operation of result.memory) {
       if (operation.op === "add") {
-        await addMemory(this.ctx, {
+        const id = await addMemory(this.ctx, {
           projectId: message.projectId,
           type: operation.type,
           text: operation.text,
@@ -170,6 +184,7 @@ export class ServeurAgent {
           proposedBy:
             operation.type === "compromise" ? { kind: "serveur" } : { kind: "member", userId: author.userId },
         });
+        if (operation.type === "task" && !taskId) taskId = id;
         memoryChanged = true;
       } else {
         const item = refs.get(operation.ref);
@@ -189,6 +204,19 @@ export class ServeurAgent {
         kind: "serveur",
         body: result.reply,
         replyToId: message.id,
+      });
+    }
+
+    // La commande part en cuisine après la réponse du serveur, pour que le fil se lise dans l'ordre.
+    if (result.order && this.kitchen) {
+      await this.kitchen.createOrder({
+        projectId: message.projectId,
+        teamId,
+        title: result.order.title,
+        brief: result.order.brief,
+        requestedByUserId: author.userId,
+        sourceMessageId: message.id,
+        memoryItemId: taskId,
       });
     }
   }

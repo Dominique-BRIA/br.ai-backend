@@ -19,16 +19,31 @@ export interface ModelChoice {
   model: string;
 }
 
-export interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: { name: string; arguments: string };
 }
 
-export interface CompletionRequest {
+export type ChatMessage =
+  | { role: "system" | "user"; content: string }
+  | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
+  | { role: "tool"; tool_call_id: string; name: string; content: string };
+
+/** Outil proposé à l'IA (format « function » compatible OpenAI). */
+export interface ToolDefinition {
+  type: "function";
+  function: { name: string; description: string; parameters: Record<string, unknown> };
+}
+
+interface Accounting {
   /** À quoi sert l'appel, pour la mesure de la consommation (« serveur », « cuisinier »…). */
   purpose: string;
   teamId?: string;
   projectId?: string;
+}
+
+export interface CompletionRequest extends Accounting {
   messages: ChatMessage[];
   /** Exige une réponse en JSON. */
   json?: boolean;
@@ -42,9 +57,22 @@ export interface Completion {
   model: string;
 }
 
+export interface ToolTurnRequest extends Accounting {
+  messages: ChatMessage[];
+  tools: ToolDefinition[];
+}
+
+/** Un tour de l'IA avec outils : du texte, des appels d'outils, ou les deux. */
+export interface ToolTurn {
+  content: string | null;
+  toolCalls: ToolCall[];
+  provider: string;
+  model: string;
+}
+
 export class AiUnavailableError extends Error {}
 
-const TIMEOUT_MS = 60_000;
+const TIMEOUT_MS = 120_000;
 
 /** Les fournisseurs connus et leur adresse compatible OpenAI. */
 export const PROVIDER_URLS: Record<string, string> = {
@@ -54,13 +82,23 @@ export const PROVIDER_URLS: Record<string, string> = {
   openrouter: "https://openrouter.ai/api/v1",
 };
 
+/** Délai minimal entre deux appels à un même fournisseur (offre gratuite de Mistral : 1 requête par seconde). */
+const MIN_INTERVAL_MS: Record<string, number> = { mistral: 1_100 };
+
 export interface Ai {
   complete(chain: ModelChoice[], request: CompletionRequest): Promise<Completion>;
+  toolTurn(chain: ModelChoice[], request: ToolTurnRequest): Promise<ToolTurn>;
+}
+
+interface RawMessage {
+  content?: string | null;
+  tool_calls?: ToolCall[];
 }
 
 export class AiClient implements Ai {
   readonly #ctx: Pick<AppContext, "db" | "log">;
   readonly #fetch: typeof fetch;
+  readonly #nextSlot = new Map<string, number>();
 
   constructor(ctx: Pick<AppContext, "db" | "log">, fetchImpl: typeof fetch = fetch) {
     this.#ctx = ctx;
@@ -68,8 +106,62 @@ export class AiClient implements Ai {
   }
 
   async complete(chain: ModelChoice[], request: CompletionRequest): Promise<Completion> {
+    return this.#firstSuccess(chain, request, async (choice) => {
+      const message = await this.#call(choice, request, {
+        messages: request.messages,
+        ...(request.json && { response_format: { type: "json_object" } }),
+      });
+      const content = message.content?.trim() ?? "";
+      if (!content) throw new Error("Réponse vide.");
+      if (request.accept && !request.accept(content)) {
+        // Un extrait va dans le journal du serveur pour comprendre le rejet, jamais dans la base.
+        this.#ctx.log.debug({ model: choice.model, excerpt: content.slice(0, 300) }, "réponse IA rejetée");
+        throw new Error("Réponse inexploitable.");
+      }
+      return { content, provider: choice.provider.name, model: choice.model };
+    });
+  }
+
+  async toolTurn(chain: ModelChoice[], request: ToolTurnRequest): Promise<ToolTurn> {
+    return this.#firstSuccess(chain, request, async (choice) => {
+      const message = await this.#call(choice, request, {
+        messages: request.messages,
+        tools: request.tools,
+        tool_choice: "auto",
+      });
+      const toolCalls = message.tool_calls ?? [];
+      const content = message.content?.trim() || null;
+      if (!content && toolCalls.length === 0) throw new Error("Réponse vide.");
+      return { content, toolCalls, provider: choice.provider.name, model: choice.model };
+    });
+  }
+
+  /** Essaie les modèles de la chaîne dans l'ordre jusqu'à une réponse exploitable. */
+  async #firstSuccess<T>(
+    chain: ModelChoice[],
+    request: Accounting,
+    run: (choice: ModelChoice) => Promise<T>,
+  ) {
     const failures: string[] = [];
     for (const choice of chain) {
+      try {
+        return await run(choice);
+      } catch (error) {
+        const message = (error as Error).message;
+        failures.push(`${choice.provider.name}/${choice.model} : ${message}`);
+        this.#ctx.log.warn(
+          { provider: choice.provider.name, model: choice.model, purpose: request.purpose, error: message },
+          "échec d'un appel IA",
+        );
+      }
+    }
+    throw new AiUnavailableError(`Aucun modèle n'a répondu.\n${failures.join("\n")}`);
+  }
+
+  /** Un appel HTTP, journalisé ; une limite de débit (429) est réessayée une fois après une pause. */
+  async #call(choice: ModelChoice, request: Accounting, body: Record<string, unknown>): Promise<RawMessage> {
+    for (let attempt = 1; ; attempt++) {
+      await this.#waitTurn(choice.provider.name);
       const started = Date.now();
       let inputTokens = 0;
       let outputTokens = 0;
@@ -77,48 +169,44 @@ export class AiClient implements Ai {
         const response = await this.#fetch(`${choice.provider.baseUrl}/chat/completions`, {
           method: "POST",
           headers: { Authorization: `Bearer ${choice.provider.apiKey}`, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            model: choice.model,
-            messages: request.messages,
-            ...(request.json && { response_format: { type: "json_object" } }),
-          }),
+          body: JSON.stringify({ model: choice.model, ...body }),
           signal: AbortSignal.timeout(TIMEOUT_MS),
         });
+        if (response.status === 429 && attempt === 1) {
+          await this.#record(choice, request, started, 0, 0, "HTTP 429 (nouvel essai)");
+          await new Promise((resolve) => setTimeout(resolve, 2_000));
+          continue;
+        }
         if (!response.ok) {
           throw new Error(`HTTP ${response.status} ${(await response.text()).slice(0, 200)}`);
         }
         const data = (await response.json()) as {
-          choices?: { message?: { content?: string | null } }[];
+          choices?: { message?: RawMessage }[];
           usage?: { prompt_tokens?: number; completion_tokens?: number };
         };
         inputTokens = data.usage?.prompt_tokens ?? 0;
         outputTokens = data.usage?.completion_tokens ?? 0;
-        const content = data.choices?.[0]?.message?.content?.trim() ?? "";
-        if (!content) throw new Error("Réponse vide.");
-        if (request.accept && !request.accept(content)) {
-          // Un extrait va dans le journal du serveur pour comprendre le rejet, jamais dans la base.
-          this.#ctx.log.debug({ model: choice.model, excerpt: content.slice(0, 300) }, "réponse IA rejetée");
-          throw new Error("Réponse inexploitable.");
-        }
-
         await this.#record(choice, request, started, inputTokens, outputTokens, null);
-        return { content, provider: choice.provider.name, model: choice.model };
+        return data.choices?.[0]?.message ?? {};
       } catch (error) {
-        const message = (error as Error).message;
-        failures.push(`${choice.provider.name}/${choice.model} : ${message}`);
-        this.#ctx.log.warn(
-          { provider: choice.provider.name, model: choice.model, error: message },
-          "échec d'un appel IA",
-        );
-        await this.#record(choice, request, started, inputTokens, outputTokens, message);
+        await this.#record(choice, request, started, inputTokens, outputTokens, (error as Error).message);
+        throw error;
       }
     }
-    throw new AiUnavailableError(`Aucun modèle n'a répondu.\n${failures.join("\n")}`);
+  }
+
+  async #waitTurn(provider: string): Promise<void> {
+    const interval = MIN_INTERVAL_MS[provider] ?? 0;
+    if (interval === 0) return;
+    const now = Date.now();
+    const slot = Math.max(now, this.#nextSlot.get(provider) ?? 0);
+    this.#nextSlot.set(provider, slot + interval);
+    if (slot > now) await new Promise((resolve) => setTimeout(resolve, slot - now));
   }
 
   async #record(
     choice: ModelChoice,
-    request: CompletionRequest,
+    request: Accounting,
     started: number,
     inputTokens: number,
     outputTokens: number,

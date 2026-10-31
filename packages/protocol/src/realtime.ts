@@ -1,11 +1,11 @@
 import { z } from "zod";
-import { message } from "./models.ts";
+import { message, order } from "./models.ts";
 
 /**
  * Version du protocole entre l'extension et le serveur.
  * À augmenter à chaque changement incompatible des messages.
  */
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 /** Chemin du point d'entrée WebSocket sur le serveur. */
 export const WS_PATH = "/ws";
@@ -39,7 +39,25 @@ const ping = z.object({
   sentAt: z.number(),
 });
 
-export const clientMessage = z.discriminatedUnion("type", [hello, ping]);
+/** Ce que la machine peut faire pour le cuisinier. Envoyé après « welcome » et à chaque changement. */
+const machineStatus = z.object({
+  type: z.literal("machine.status"),
+  /** Projets dont un dossier local est associé sur cette machine. */
+  projects: z.array(z.uuid()).max(200),
+  /** Prêt de machine : le cuisinier peut y travailler pour les commandes des autres membres. */
+  lending: z.boolean(),
+});
+
+/** Résultat d'un outil exécuté sur la machine (ou refus du membre). */
+const toolResult = z.object({
+  type: z.literal("tool.result"),
+  callId: z.string(),
+  ok: z.boolean(),
+  /** Sortie de l'outil, ou explication du refus ou de l'erreur. */
+  output: z.string().max(200_000),
+});
+
+export const clientMessage = z.discriminatedUnion("type", [hello, ping, machineStatus, toolResult]);
 export type ClientMessage = z.infer<typeof clientMessage>;
 
 // Serveur → extension
@@ -67,6 +85,22 @@ const presenceChanged = z.object({
   type: z.literal("presence.changed"),
   userId: z.uuid(),
   online: z.boolean(),
+});
+
+/** Le cuisinier demande à la machine d'exécuter un outil dans le dossier du projet. */
+const toolCall = z.object({
+  type: z.literal("tool.call"),
+  callId: z.string(),
+  orderId: z.uuid(),
+  projectId: z.uuid(),
+  tool: z.string(),
+  input: z.record(z.string(), z.unknown()),
+});
+
+/** Une commande a changé (statut, étapes, bilan). */
+const orderUpdated = z.object({
+  type: z.literal("order.updated"),
+  order,
 });
 
 /** La mémoire d'un projet a changé : la recharger. */
@@ -102,12 +136,22 @@ export const serverMessage = z.discriminatedUnion("type", [
   presenceChanged,
   memoryChanged,
   workspaceChanged,
+  toolCall,
+  orderUpdated,
   error,
 ]);
 export type ServerMessage = z.infer<typeof serverMessage>;
 export type ServerEvent = Extract<
   ServerMessage,
-  { type: "message.created" | "presence.changed" | "memory.changed" | "workspace.changed" }
+  {
+    type:
+      | "message.created"
+      | "presence.changed"
+      | "memory.changed"
+      | "workspace.changed"
+      | "tool.call"
+      | "order.updated";
+  }
 >;
 
 /** Lit un message reçu de l'extension. Renvoie `null` si le contenu est invalide. */

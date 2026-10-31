@@ -1,6 +1,7 @@
 import { WS_PATH } from "@br-ia/protocol";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyServerOptions } from "fastify";
+import { Kitchen } from "./agents/cuisinier.ts";
 import { ServeurAgent } from "./agents/serveur.ts";
 import { type Ai, AiClient, type ModelChoice } from "./ai/client.ts";
 import { requireAuth } from "./auth/sessions.ts";
@@ -15,11 +16,12 @@ import { authRoutes } from "./routes/auth.ts";
 import { meRoutes } from "./routes/me.ts";
 import { memoryRoutes } from "./routes/memory.ts";
 import { messageRoutes } from "./routes/messages.ts";
+import { orderRoutes } from "./routes/orders.ts";
 import { teamRoutes } from "./routes/teams.ts";
 import { MemoryStorage, type Storage } from "./storage/storage.ts";
 import { handleConnection } from "./ws/connection.ts";
 
-export const SERVER_VERSION = "0.4.0";
+export const SERVER_VERSION = "0.5.0";
 
 export interface AppOptions {
   database: Database;
@@ -31,6 +33,8 @@ export interface AppOptions {
   adminToken?: string;
   /** Modèles de l'agent serveur, dans l'ordre d'essai. Vide : agent désactivé. */
   serveurChain?: ModelChoice[];
+  /** Modèles du cuisinier, dans l'ordre d'essai. Vide : cuisinier désactivé. */
+  cuisinierChain?: ModelChoice[];
   /** Client d'IA ; par défaut, appels réels aux fournisseurs (les tests en fournissent un faux). */
   ai?: Ai;
   helloTimeoutMs?: number;
@@ -45,10 +49,15 @@ export async function buildApp(options: AppOptions) {
     storage: options.storage ?? new MemoryStorage(),
     log: app.log,
     onMemberMessage: () => {},
+    kitchen: { onMachineStatus() {}, onToolResult() {}, onConnectionClosed() {} },
   };
+  const ai = options.ai ?? new AiClient(ctx);
+  const cuisinierChain = options.cuisinierChain ?? [];
+  const kitchen = cuisinierChain.length > 0 ? new Kitchen(ctx, ai, cuisinierChain) : null;
+  if (kitchen) ctx.kitchen = kitchen;
+  else app.log.warn("Cuisinier désactivé : aucune clé d'IA configurée pour lui.");
   const serveurChain = options.serveurChain ?? [];
-  const serveur =
-    serveurChain.length > 0 ? new ServeurAgent(ctx, options.ai ?? new AiClient(ctx), serveurChain) : null;
+  const serveur = serveurChain.length > 0 ? new ServeurAgent(ctx, ai, serveurChain, kitchen) : null;
   if (serveur) ctx.onMemberMessage = (message, teamId) => void serveur.onMemberMessage(message, teamId);
   else app.log.warn("Agent serveur désactivé : aucune clé d'IA configurée.");
 
@@ -77,10 +86,11 @@ export async function buildApp(options: AppOptions) {
     attachmentRoutes(scope, ctx);
     meRoutes(scope, ctx);
     memoryRoutes(scope, ctx);
+    orderRoutes(scope, ctx, kitchen);
   });
   await app.register(async (scope) => adminRoutes(scope, ctx, options.adminToken));
 
   // Pas d'Object.assign sur l'instance Fastify : elle se comporte comme une promesse,
   // et l'attendre ferait perdre les propriétés ajoutées dans les types.
-  return { app, ctx, serveur };
+  return { app, ctx, serveur, kitchen };
 }

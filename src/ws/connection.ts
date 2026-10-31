@@ -107,6 +107,8 @@ export function handleConnection(
         userId: session.userId,
         sessionId: session.id,
         machine: message.machine,
+        projects: new Set(),
+        lending: false,
         send,
         close: () => socket.close(CLOSE_CODES.unauthenticated, "session_revoked"),
       };
@@ -124,6 +126,14 @@ export function handleConnection(
       case "ping":
         send({ type: "pong", sentAt: message.sentAt });
         return;
+      case "machine.status":
+        live.projects = new Set(message.projects);
+        live.lending = message.lending;
+        ctx.kitchen.onMachineStatus();
+        return;
+      case "tool.result":
+        ctx.kitchen.onToolResult(connectionId, message);
+        return;
     }
   }
 
@@ -131,6 +141,7 @@ export function handleConnection(
     clearTimeout(helloTimer);
     if (!live) return;
     const lastMachine = ctx.hub.remove(live);
+    ctx.kitchen.onConnectionClosed(connectionId);
     ctx.log.info({ connectionId }, "machine déconnectée");
     if (lastMachine) await announce(live.userId, false);
   }

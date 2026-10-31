@@ -128,3 +128,45 @@ export const memoryItem = z.object({
   updatedAt: z.iso.datetime(),
 });
 export type MemoryItem = z.infer<typeof memoryItem>;
+
+/** Commande passée au cuisinier. */
+export const orderStatus = z.enum([
+  /** En attente d'une machine disponible, ou de son tour (une commande active par projet). */
+  "pending",
+  "running",
+  "done",
+  "failed",
+  /** Arrêtée par le demandeur ou par le chef. */
+  "stopped",
+]);
+export type OrderStatus = z.infer<typeof orderStatus>;
+
+export const orderStep = z.object({
+  at: z.iso.datetime(),
+  kind: z.enum(["info", "read", "write", "command", "error"]),
+  text: z.string(),
+});
+export type OrderStep = z.infer<typeof orderStep>;
+
+export const order = z.object({
+  id: z.uuid(),
+  projectId: z.uuid(),
+  /** Numéro lisible dans le projet : commande n° 3. */
+  number: z.number().int().positive(),
+  title: z.string(),
+  /** Ce que le cuisinier doit faire, reformulé par le serveur. */
+  brief: z.string(),
+  status: orderStatus,
+  requestedBy: messageAuthor,
+  /** Machine sur laquelle le cuisinier travaille ou a travaillé. */
+  machine: z.object({ userId: z.uuid(), displayName: z.string(), sessionId: z.uuid() }).nullable(),
+  /** Bilan du cuisinier à la fin de la commande. */
+  summary: z.string().nullable(),
+  /** Fichiers modifiés, relatifs au dossier du projet. */
+  changedFiles: z.array(z.string()),
+  /** Dernières étapes, de la plus ancienne à la plus récente. */
+  steps: z.array(orderStep),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+export type Order = z.infer<typeof order>;

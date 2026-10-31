@@ -27,10 +27,10 @@ export class MemoryMailer implements Mailer {
   }
 }
 
-export async function startApp(options: Pick<AppOptions, "ai" | "serveurChain"> = {}) {
+export async function startApp(options: Pick<AppOptions, "ai" | "serveurChain" | "cuisinierChain"> = {}) {
   const database = await openDatabase();
   const mailer = new MemoryMailer();
-  const { app, ctx, serveur } = await buildApp({
+  const { app, ctx, serveur, kitchen } = await buildApp({
     database,
     mailer,
     adminToken: ADMIN_TOKEN,
@@ -134,6 +134,7 @@ export async function startApp(options: Pick<AppOptions, "ai" | "serveurChain"> 
     app,
     ctx,
     serveur,
+    kitchen,
     db: database.db,
     mailer,
     wsUrl,

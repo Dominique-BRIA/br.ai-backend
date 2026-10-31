@@ -22,6 +22,8 @@ const schema = z.object({
     .default(
       "gemini:gemini-3.5-flash-lite,gemini:gemini-3.1-flash-lite,groq:openai/gpt-oss-120b,gemini:gemini-flash-lite-latest",
     ),
+  /** Modèles du cuisinier (ils doivent savoir appeler des outils), dans l'ordre d'essai. */
+  AI_CUISINIER_CHAIN: z.string().default("mistral:codestral-latest,gemini:gemini-3.5-flash"),
   /** Dossier des pièces jointes quand Backblaze B2 n'est pas configuré. */
   FILES_DIR: z.string().default(".data/files"),
   /** Backblaze B2 : les quatre variables, ou aucune. */

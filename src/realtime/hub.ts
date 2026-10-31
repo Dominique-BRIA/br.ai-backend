@@ -5,6 +5,10 @@ export interface LiveConnection {
   userId: string;
   sessionId: string;
   machine: MachineInfo;
+  /** Projets dont un dossier local est associé sur cette machine. */
+  projects: Set<string>;
+  /** Prêt de machine activé. */
+  lending: boolean;
   send(event: ServerEvent): void;
   /** Ferme la connexion, par exemple quand sa session est révoquée. */
   close(): void;
@@ -49,6 +53,15 @@ export class RealtimeHub {
     for (const connection of [...(this.#byUser.get(userId)?.values() ?? [])]) {
       if (connection.sessionId === sessionId) connection.close();
     }
+  }
+
+  /** Toutes les machines connectées. */
+  all(): LiveConnection[] {
+    return [...this.#byUser.values()].flatMap((connections) => [...connections.values()]);
+  }
+
+  byId(connectionId: string): LiveConnection | undefined {
+    return this.all().find((connection) => connection.connectionId === connectionId);
   }
 
   isOnline(userId: string): boolean {

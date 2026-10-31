@@ -1,25 +1,10 @@
 import type { MemoryResponse, Message, Team } from "@br-ia/protocol";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { Ai, CompletionRequest, ModelChoice } from "../src/ai/client.ts";
-import { AiClient, AiUnavailableError, parseChain } from "../src/ai/client.ts";
+import { AiClient, parseChain } from "../src/ai/client.ts";
 import { aiCalls } from "../src/db/schema.ts";
+import { ScriptedAi } from "./fakeAi.ts";
 import { startApp, type TestApp } from "./helpers.ts";
-
-/** Fausse IA : renvoie les réponses prévues, dans l'ordre, et garde les demandes reçues. */
-class ScriptedAi implements Ai {
-  readonly requests: CompletionRequest[] = [];
-  readonly replies: (object | "indisponible")[] = [];
-
-  async complete(_chain: ModelChoice[], request: CompletionRequest) {
-    this.requests.push(request);
-    const next = this.replies.shift();
-    if (!next || next === "indisponible") throw new AiUnavailableError("aucun modèle");
-    const content = JSON.stringify(next);
-    if (request.accept && !request.accept(content)) throw new AiUnavailableError("réponse refusée");
-    return { content, provider: "faux", model: "faux" };
-  }
-}
 
 const ai = new ScriptedAi();
 const chain = parseChain("gemini:faux-modele", { gemini: "cle" });
@@ -185,8 +170,9 @@ describe("agent serveur", () => {
 });
 
 describe("couche commune d'IA", () => {
-  it("passe au modèle suivant en cas de quota, de réponse inexploitable, et journalise chaque essai", async () => {
+  it("réessaie une limite de débit, passe au modèle suivant en cas d'échec ou de réponse inexploitable, et journalise chaque appel", async () => {
     const answers = [
+      new Response("quota", { status: 429 }),
       new Response("quota", { status: 429 }),
       new Response(JSON.stringify({ choices: [{ message: { content: "pas du JSON" } }] })),
       new Response(
@@ -217,12 +203,14 @@ describe("couche commune d'IA", () => {
       },
     });
 
-    expect(calledModels).toEqual(["a", "b", "c"]);
+    // Une limite de débit est réessayée une fois sur le même modèle avant de passer au suivant.
+    expect(calledModels).toEqual(["a", "a", "b", "c"]);
     expect(result).toEqual({ content: '{"ok": true}', provider: "gemini", model: "c" });
     const calls = await t.db.select().from(aiCalls).where(eq(aiCalls.purpose, "essai"));
     expect(calls.map((call) => [call.model, call.ok])).toEqual([
       ["a", false],
-      ["b", false],
+      ["a", false],
+      ["b", true],
       ["c", true],
     ]);
     expect(calls.at(-1)).toMatchObject({ inputTokens: 120, outputTokens: 8 });

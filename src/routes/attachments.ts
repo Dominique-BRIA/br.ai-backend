@@ -99,9 +99,9 @@ function fileName(raw: string | string[] | undefined): string {
   }
   // Pas de chemin, pas de caractères de contrôle, longueur raisonnable.
   const base = name.split(/[\\/]/).at(-1) ?? "";
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: on retire justement les caractères de contrôle.
-  const cleaned = base
-    .replace(/[\u0000-\u001f\u007f]/g, "")
+  const cleaned = Array.from(base)
+    .filter((char) => char.charCodeAt(0) > 31 && char.charCodeAt(0) !== 127)
+    .join("")
     .trim()
     .slice(0, 200);
   return cleaned || "fichier";

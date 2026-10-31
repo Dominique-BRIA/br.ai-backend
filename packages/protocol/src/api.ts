@@ -8,6 +8,7 @@ import {
   memoryItem,
   memoryStatus,
   message,
+  order,
   team,
   user,
 } from "./models.ts";
@@ -188,3 +189,12 @@ export type MemoryResponse = z.infer<typeof memoryResponse>;
  */
 export const updateMemoryBody = z.object({ status: memoryStatus });
 export type UpdateMemoryBody = z.input<typeof updateMemoryBody>;
+
+// Commandes du cuisinier
+
+/** GET /projects/:projectId/orders — les commandes du projet, de la plus récente à la plus ancienne. */
+export const ordersResponse = z.object({ orders: z.array(order) });
+export type OrdersResponse = z.infer<typeof ordersResponse>;
+
+/** POST /orders/:orderId/stop — réservé au demandeur et au chef. */
+export const orderResponse = z.object({ order });
