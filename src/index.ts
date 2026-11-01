@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { parseChain } from "./ai/client.ts";
 import { buildApp } from "./app.ts";
 import { loadConfig } from "./config.ts";
-import { openDatabase } from "./db/client.ts";
+import { openDatabase, openPostgres } from "./db/client.ts";
 import { betaInvites } from "./db/schema.ts";
 import { ResendMailer } from "./mail/mailer.ts";
 import { Vault } from "./secrets/vault.ts";
@@ -14,7 +14,15 @@ import { B2Storage, DiskStorage } from "./storage/storage.ts";
 const DEV_INVITE_CODE = "BETA-DEV";
 
 const config = loadConfig();
-const database = await openDatabase(config.PGLITE_DIR);
+// En production, la base est PostgreSQL (Neon) ; en développement, PGlite, même si DATABASE_URL est
+// renseignée, pour que les essais locaux ne touchent jamais les données des testeurs.
+if (config.NODE_ENV === "production" && !config.DATABASE_URL) {
+  throw new Error("DATABASE_URL est obligatoire en production.");
+}
+const database =
+  config.NODE_ENV === "production" && config.DATABASE_URL
+    ? await openPostgres(config.DATABASE_URL, config.DATABASE_DIRECT)
+    : await openDatabase(config.PGLITE_DIR);
 
 const b2 =
   config.B2_KEY_ID && config.B2_APPLICATION_KEY && config.B2_BUCKET && config.B2_ENDPOINT
@@ -31,6 +39,7 @@ const aiKeys = {
   groq: config.GROQ_API_KEY,
   mistral: config.MISTRAL_API_KEY,
   openrouter: config.OPENROUTER_API_KEY,
+  zai: config.ZAI_API_KEY,
 };
 const serveurChain = parseChain(config.AI_SERVEUR_CHAIN, aiKeys);
 const cuisinierChain = parseChain(config.AI_CUISINIER_CHAIN, aiKeys);
