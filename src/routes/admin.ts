@@ -37,7 +37,7 @@ export function adminRoutes(
     if (account) {
       // Chaque section du tableau de bord demande son autorisation.
       const required = requiredPermission(request.method, request.routeOptions.url ?? request.url);
-      if (!allowed(account.permissions, required)) {
+      if (!allowed(account.permissions, required, request.method)) {
         throw new HttpError(
           403,
           "forbidden",

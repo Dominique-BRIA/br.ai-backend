@@ -1,7 +1,7 @@
 import { and, eq, gt, isNull, ne } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { ADMIN_PERMISSIONS } from "../auth/adminPermissions.ts";
+import { ADMIN_GRANTS } from "../auth/adminPermissions.ts";
 import { hashPassword, verifyPassword } from "../auth/passwords.ts";
 import { newSessionToken, sha256 } from "../auth/secrets.ts";
 import type { AppContext } from "../context.ts";
@@ -29,12 +29,12 @@ export const newAdminBody = z.object({
     .transform((value) => value.trim().toLowerCase()),
   name: z.string().trim().min(1).max(80),
   password: z.string().min(12, "Au moins 12 caractères.").max(200),
-  permissions: z.array(z.enum(ADMIN_PERMISSIONS)).default([]),
+  permissions: z.array(z.enum(ADMIN_GRANTS)).default([]),
 });
 
 const updateAdminBody = z.object({
   disabled: z.boolean().optional(),
-  permissions: z.array(z.enum(ADMIN_PERMISSIONS)).optional(),
+  permissions: z.array(z.enum(ADMIN_GRANTS)).optional(),
 });
 
 const profileBody = z.object({

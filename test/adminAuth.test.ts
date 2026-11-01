@@ -102,7 +102,7 @@ describe("comptes de l'équipe interne", () => {
     });
   });
 
-  it("limite un compte aux sections autorisées", async () => {
+  it("limite un compte aux sections autorisées, en entier ou en lecture seule", async () => {
     await t.call("POST", "/admin/admins", {
       admin: true,
       body: {
@@ -125,6 +125,20 @@ describe("comptes de l'équipe interne", () => {
     });
     expect(granted.statusCode).toBe(200);
     expect((await withSession("/admin/users", awa)).statusCode).toBe(200);
+
+    // En lecture seule, la section se consulte mais ne se modifie pas.
+    await withSession(`/admin/admins/${awaId}`, dominique, "PATCH", {
+      permissions: ["utilisateurs:lecture"],
+    });
+    expect((await withSession("/admin/users", awa)).statusCode).toBe(200);
+    // Le contrôle d'accès passe avant la recherche du compte : n'importe quel identifiant convient.
+    const blocked = await withSession(`/admin/users/${awaId}`, awa, "PATCH", { suspended: true });
+    expect(blocked.statusCode).toBe(403);
+    expect((await withSession("/admin/feedback", awa)).statusCode).toBe(403);
+    const unknown = await withSession(`/admin/admins/${awaId}`, dominique, "PATCH", {
+      permissions: ["utilisateurs:ecriture"],
+    });
+    expect(unknown.statusCode).toBe(400);
 
     // Personne ne change ses propres droits, et il reste toujours un compte qui gère les comptes.
     const dominiqueId = await adminId("dominique@exemple.org");
