@@ -92,6 +92,13 @@
       "when": 1793536967510,
       "tag": "0012_demandes_beta",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1793554064083,
+      "tag": "0013_autorisations_admin",
+      "breakpoints": true
     }
   ]
 }

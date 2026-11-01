@@ -7,6 +7,7 @@
  * envoie au serveur en cours d'exécution, authentifié par le jeton ADMIN_TOKEN du fichier .env.
  */
 import { createInterface } from "node:readline";
+import { ADMIN_PERMISSIONS } from "../src/auth/adminPermissions.ts";
 
 const server = (process.env.ADMIN_SERVER_URL ?? `http://127.0.0.1:${process.env.PORT ?? 4000}`).replace(
   /\/+$/,
@@ -48,7 +49,8 @@ if (password !== confirmation) {
 const response = await fetch(`${server}/admin/admins`, {
   method: "POST",
   headers: { "Content-Type": "application/json", "x-admin-token": token },
-  body: JSON.stringify({ email, name, password }),
+  // Le compte créé par le script a accès à tout le tableau de bord.
+  body: JSON.stringify({ email, name, password, permissions: ADMIN_PERMISSIONS }),
 }).catch(() => null);
 if (!response) {
   console.error(`Le serveur ne répond pas sur ${server}. Lancez-le d'abord (npm run dev).`);

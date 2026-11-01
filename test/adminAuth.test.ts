@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ADMIN_PERMISSIONS } from "../src/auth/adminPermissions.ts";
 import { startApp, type TestApp } from "./helpers.ts";
 
 let t: TestApp;
@@ -11,8 +12,19 @@ const login = (email: string, password: string) =>
   t.call<{ token: string; admin: { email: string; name: string } }>("POST", "/admin-auth/login", {
     body: { email, password },
   });
-const withSession = (url: string, session: string, method: "GET" | "POST" = "GET") =>
-  t.app.inject({ method, url, headers: { "x-admin-session": session } });
+const withSession = (
+  url: string,
+  session: string,
+  method: "GET" | "POST" | "PATCH" = "GET",
+  payload?: Record<string, unknown>,
+) => t.app.inject({ method, url, headers: { "x-admin-session": session }, payload });
+
+const adminId = async (email: string) => {
+  const { json } = await t.call<{ admins: { id: string; email: string }[] }>("GET", "/admin/admins", {
+    admin: true,
+  });
+  return json.admins.find((admin) => admin.email === email)?.id;
+};
 
 describe("comptes de l'équipe interne", () => {
   it("crée un compte avec le jeton d'administration, et exige un mot de passe solide", async () => {
@@ -23,15 +35,18 @@ describe("comptes de l'équipe interne", () => {
     expect(weak.status).toBe(400);
     const created = await t.call("POST", "/admin/admins", {
       admin: true,
-      body: { email: "Dominique@Exemple.org", name: "Dominique", password: "un mot de passe solide" },
+      body: {
+        email: "Dominique@Exemple.org",
+        name: "Dominique",
+        password: "un mot de passe solide",
+        permissions: ADMIN_PERMISSIONS,
+      },
     });
     expect(created.status).toBe(201);
     const list = await t.call<{ admins: { email: string; passwordHash?: string }[] }>(
       "GET",
       "/admin/admins",
-      {
-        admin: true,
-      },
+      { admin: true },
     );
     expect(list.json.admins).toMatchObject([{ email: "dominique@exemple.org" }]);
     expect(JSON.stringify(list.json)).not.toContain("scrypt");
@@ -45,7 +60,7 @@ describe("comptes de l'équipe interne", () => {
 
     expect((await withSession("/admin/overview", json.token)).statusCode).toBe(200);
     expect((await withSession("/admin-auth/me", json.token)).json()).toMatchObject({
-      admin: { email: "dominique@exemple.org", name: "Dominique" },
+      admin: { email: "dominique@exemple.org", name: "Dominique", permissions: [...ADMIN_PERMISSIONS] },
     });
 
     await withSession("/admin-auth/logout", json.token, "POST");
@@ -56,12 +71,7 @@ describe("comptes de l'équipe interne", () => {
     const other = (await login("dominique@exemple.org", "un mot de passe solide")).json.token;
     const current = (await login("dominique@exemple.org", "un mot de passe solide")).json.token;
     const change = (currentPassword: string, newPassword: string) =>
-      t.app.inject({
-        method: "POST",
-        url: "/admin-auth/password",
-        headers: { "x-admin-session": current },
-        payload: { currentPassword, newPassword },
-      });
+      withSession("/admin-auth/password", current, "POST", { currentPassword, newPassword });
 
     expect((await change("faux", "nouveau mot de passe solide")).statusCode).toBe(403);
     expect((await change("un mot de passe solide", "court")).statusCode).toBe(400);
@@ -73,31 +83,79 @@ describe("comptes de l'équipe interne", () => {
     expect((await change("nouveau mot de passe solide", "un mot de passe solide")).statusCode).toBe(200);
   });
 
+  it("modifie son profil ; changer d'adresse demande le mot de passe", async () => {
+    const session = (await login("dominique@exemple.org", "un mot de passe solide")).json.token;
+    expect((await withSession("/admin-auth/me", session, "PATCH", { name: "Dominique B." })).statusCode).toBe(
+      200,
+    );
+    const noPassword = await withSession("/admin-auth/me", session, "PATCH", { email: "d@exemple.org" });
+    expect(noPassword.statusCode).toBe(403);
+    const moved = await withSession("/admin-auth/me", session, "PATCH", {
+      email: "d@exemple.org",
+      currentPassword: "un mot de passe solide",
+    });
+    expect(moved.json()).toEqual({ admin: { email: "d@exemple.org", name: "Dominique B." } });
+    await withSession("/admin-auth/me", session, "PATCH", {
+      name: "Dominique",
+      email: "dominique@exemple.org",
+      currentPassword: "un mot de passe solide",
+    });
+  });
+
+  it("limite un compte aux sections autorisées", async () => {
+    await t.call("POST", "/admin/admins", {
+      admin: true,
+      body: {
+        email: "awa@exemple.org",
+        name: "Awa",
+        password: "le mot de passe d'Awa",
+        permissions: ["retours"],
+      },
+    });
+    const awa = (await login("awa@exemple.org", "le mot de passe d'Awa")).json.token;
+    expect((await withSession("/admin/overview", awa)).statusCode).toBe(200);
+    expect((await withSession("/admin/feedback", awa)).statusCode).toBe(200);
+    expect((await withSession("/admin/users", awa)).statusCode).toBe(403);
+    expect((await withSession("/admin/admins", awa)).statusCode).toBe(403);
+
+    const dominique = (await login("dominique@exemple.org", "un mot de passe solide")).json.token;
+    const awaId = await adminId("awa@exemple.org");
+    const granted = await withSession(`/admin/admins/${awaId}`, dominique, "PATCH", {
+      permissions: ["retours", "utilisateurs"],
+    });
+    expect(granted.statusCode).toBe(200);
+    expect((await withSession("/admin/users", awa)).statusCode).toBe(200);
+
+    // Personne ne change ses propres droits, et il reste toujours un compte qui gère les comptes.
+    const dominiqueId = await adminId("dominique@exemple.org");
+    expect(
+      (await withSession(`/admin/admins/${dominiqueId}`, dominique, "PATCH", { permissions: [] })).statusCode,
+    ).toBe(409);
+    const lastManager = await t.call("PATCH", `/admin/admins/${dominiqueId}`, {
+      admin: true,
+      body: { permissions: ["retours"] },
+    });
+    expect(lastManager.status).toBe(409);
+  });
+
   it("refuse un compte désactivé et bloque après trop d'échecs", async () => {
     await t.call("POST", "/admin/admins", {
       admin: true,
       body: { email: "ali@exemple.org", name: "Ali", password: "un autre mot de passe" },
     });
-    const { json } = await t.call<{ admins: { id: string; email: string }[] }>("GET", "/admin/admins", {
-      admin: true,
-    });
-    const ali = json.admins.find((admin) => admin.email === "ali@exemple.org");
+    const ali = await adminId("ali@exemple.org");
     const session = (await login("ali@exemple.org", "un autre mot de passe")).json.token;
-    await t.call("PATCH", `/admin/admins/${ali?.id}`, { admin: true, body: { disabled: true } });
+    await t.call("PATCH", `/admin/admins/${ali}`, { admin: true, body: { disabled: true } });
     expect((await withSession("/admin/overview", session)).statusCode).toBe(401);
     expect((await login("ali@exemple.org", "un autre mot de passe")).status).toBe(401);
 
-    const dominique = json.admins.find((admin) => admin.email === "dominique@exemple.org");
+    // Dominique est le seul compte actif qui gère les comptes : il ne peut pas être désactivé.
+    const dominique = await adminId("dominique@exemple.org");
     const own = (await login("dominique@exemple.org", "un mot de passe solide")).json.token;
-    const selfDisable = await t.app.inject({
-      method: "PATCH",
-      url: `/admin/admins/${dominique?.id}`,
-      headers: { "x-admin-session": own },
-      payload: { disabled: true },
-    });
-    expect(selfDisable.statusCode).toBe(409);
-    // Ali étant désactivé, Dominique est le dernier compte actif.
-    const last = await t.call("PATCH", `/admin/admins/${dominique?.id}`, {
+    expect(
+      (await withSession(`/admin/admins/${dominique}`, own, "PATCH", { disabled: true })).statusCode,
+    ).toBe(409);
+    const last = await t.call("PATCH", `/admin/admins/${dominique}`, {
       admin: true,
       body: { disabled: true },
     });

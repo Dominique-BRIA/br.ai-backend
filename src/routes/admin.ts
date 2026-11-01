@@ -4,6 +4,7 @@ import { desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ModelChoice } from "../ai/client.ts";
+import { allowed, requiredPermission } from "../auth/adminPermissions.ts";
 import { newInvitationCode } from "../auth/secrets.ts";
 import type { AppContext } from "../context.ts";
 import { betaInvites, promoCodes } from "../db/schema.ts";
@@ -32,7 +33,19 @@ export function adminRoutes(
   app.addHook("preHandler", async (request) => {
     // Une session ouverte par un compte de l'équipe interne (tableau de bord)…
     const session = request.headers["x-admin-session"];
-    if (typeof session === "string" && session && (await findAdminSession(ctx, session))) return;
+    const account = typeof session === "string" && session ? await findAdminSession(ctx, session) : null;
+    if (account) {
+      // Chaque section du tableau de bord demande son autorisation.
+      const required = requiredPermission(request.method, request.routeOptions.url ?? request.url);
+      if (!allowed(account.permissions, required)) {
+        throw new HttpError(
+          403,
+          "forbidden",
+          "Votre compte n'a pas accès à cette partie du tableau de bord.",
+        );
+      }
+      return;
+    }
     // … ou le jeton d'administration du serveur (scripts, premier compte).
     const given = request.headers["x-admin-token"];
     if (!adminToken || typeof given !== "string" || !sameSecret(given, adminToken)) {

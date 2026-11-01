@@ -455,6 +455,8 @@ export const adminAccounts = pgTable("admin_accounts", {
   name: text().notNull(),
   /** Empreinte scrypt du mot de passe ; jamais le mot de passe lui-même. */
   passwordHash: text().notNull(),
+  /** Sections du tableau de bord auxquelles le compte a accès (voir auth/adminPermissions.ts). */
+  permissions: jsonb().$type<string[]>().notNull().default([]),
   lastLoginAt: timestamp({ withTimezone: true }),
   disabledAt: timestamp({ withTimezone: true }),
   createdAt: createdAt(),
