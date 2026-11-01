@@ -15,7 +15,7 @@ interface BetaRequest {
 }
 
 describe("demandes d'accès à la bêta", () => {
-  it("une demande est gardée une seule fois, puis le code envoyé ouvre un compte", async () => {
+  it("une demande est gardée une seule fois, le code envoyé peut être renvoyé, puis ouvre un compte", async () => {
     const first = await t.call("POST", "/beta-requests", { body: { email: "Lea@Exemple.org" } });
     expect(first.status).toBe(200);
     await t.call("POST", "/beta-requests", { body: { email: "lea@exemple.org" } });
@@ -36,10 +36,24 @@ describe("demandes d'accès à la bêta", () => {
     const again = await t.call("POST", `/admin/beta-requests/${mine[0]?.id}/invite`, { admin: true });
     expect(again.status).toBe(409);
 
-    const code = await t.call("POST", "/auth/code", {
-      body: { email: "lea@exemple.org", invitationCode: invite.json.code },
+    const sentBefore = t.mailer.sent.length;
+    const resent = await t.call<{ code: string }>("POST", `/admin/beta-requests/${mine[0]?.id}/resend`, {
+      admin: true,
     });
-    expect(code.status).toBe(200);
+    expect(resent.json.code).toBe(invite.json.code);
+    expect(t.mailer.sent.length).toBe(sentBefore + 1);
+
+    await t.signUp("lea@exemple.org", "Léa", invite.json.code);
+    const list = await t.call<{ requests: (BetaRequest & { joined: boolean })[] }>(
+      "GET",
+      "/admin/beta-requests",
+      {
+        admin: true,
+      },
+    );
+    expect(list.json.requests.find((request) => request.email === "lea@exemple.org")?.joined).toBe(true);
+    const late = await t.call("POST", `/admin/beta-requests/${mine[0]?.id}/resend`, { admin: true });
+    expect(late.status).toBe(409);
   });
 
   it("refuse une adresse invalide et limite les demandes répétées", async () => {

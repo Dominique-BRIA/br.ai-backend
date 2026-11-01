@@ -48,14 +48,21 @@ export function betaRequestRoutes(app: FastifyInstance, ctx: AppContext): void {
 /** Les demandes, dans le tableau de bord, et l'envoi d'un code d'invitation par e-mail. */
 export function betaRequestAdminRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get("/admin/beta-requests", async () => {
-    const rows = await ctx.db.select().from(betaRequests).orderBy(desc(betaRequests.createdAt)).limit(500);
+    const rows = await ctx.db
+      .select({ request: betaRequests, uses: betaInvites.uses })
+      .from(betaRequests)
+      .leftJoin(betaInvites, eq(betaInvites.code, betaRequests.inviteCode))
+      .orderBy(desc(betaRequests.createdAt))
+      .limit(500);
     return {
-      requests: rows.map((row) => ({
-        id: row.id,
-        email: row.email,
-        inviteCode: row.inviteCode,
-        invitedAt: row.invitedAt?.toISOString() ?? null,
-        createdAt: row.createdAt.toISOString(),
+      requests: rows.map(({ request, uses }) => ({
+        id: request.id,
+        email: request.email,
+        inviteCode: request.inviteCode,
+        invitedAt: request.invitedAt?.toISOString() ?? null,
+        /** Le code a servi : un compte existe pour cette adresse. */
+        joined: (uses ?? 0) > 0,
+        createdAt: request.createdAt.toISOString(),
       })),
     };
   });
@@ -74,6 +81,36 @@ export function betaRequestAdminRoutes(app: FastifyInstance, ctx: AppContext): v
     } catch {
       // Sans e-mail parti, le code ne sert à personne : la demande reste à traiter.
       await ctx.db.delete(betaInvites).where(eq(betaInvites.code, code));
+      throw new HttpError(502, "mail_failed", "L'e-mail d'invitation n'a pas pu partir. Réessayez.");
+    }
+    const invitedAt = new Date();
+    await ctx.db.update(betaRequests).set({ inviteCode: code, invitedAt }).where(eq(betaRequests.id, id));
+    return { code, invitedAt: invitedAt.toISOString() };
+  });
+
+  /** Renvoie le même code tant qu'il est valable ; un code expiré est remplacé par un nouveau. */
+  app.post("/admin/beta-requests/:id/resend", async (request) => {
+    const { id } = parse(idParams, request.params);
+    const [row] = await ctx.db.select().from(betaRequests).where(eq(betaRequests.id, id));
+    if (!row) throw new HttpError(404, "not_found", "Demande introuvable.");
+    if (!row.inviteCode)
+      throw new HttpError(409, "invalid_request", "Cette adresse n'a pas encore été invitée.");
+    const [invite] = await ctx.db.select().from(betaInvites).where(eq(betaInvites.code, row.inviteCode));
+    if (invite && invite.uses >= invite.maxUses) {
+      throw new HttpError(409, "already_invited", "Ce code a déjà servi à créer un compte.");
+    }
+
+    let code = row.inviteCode;
+    let expiresAt = invite?.expiresAt ?? null;
+    if (!invite || !expiresAt || expiresAt.getTime() <= Date.now()) {
+      code = newInvitationCode("BETA");
+      expiresAt = new Date(Date.now() + INVITE_DAYS * 86_400_000);
+      await ctx.db.insert(betaInvites).values({ code, maxUses: 1, note: row.email, expiresAt });
+    }
+    try {
+      await ctx.mailer.send(betaInviteMail(row.email, code, expiresAt));
+    } catch {
+      if (code !== row.inviteCode) await ctx.db.delete(betaInvites).where(eq(betaInvites.code, code));
       throw new HttpError(502, "mail_failed", "L'e-mail d'invitation n'a pas pu partir. Réessayez.");
     }
     const invitedAt = new Date();
