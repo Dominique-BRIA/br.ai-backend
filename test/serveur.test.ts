@@ -1,7 +1,7 @@
 import type { MemoryResponse, Message, Team } from "@br-ia/protocol";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { AiClient, parseChain } from "../src/ai/client.ts";
+import { AiClient, type ChatMessage, parseChain } from "../src/ai/client.ts";
 import { aiCalls } from "../src/db/schema.ts";
 import { ScriptedAi } from "./fakeAi.ts";
 import { startApp, type TestApp } from "./helpers.ts";
@@ -232,6 +232,66 @@ describe("couche commune d'IA", () => {
       ["c", true],
     ]);
     expect(calls.at(-1)).toMatchObject({ inputTokens: 120, outputTokens: 8 });
+  });
+
+  it("envoie à Mistral un historique sans les champs propres à Gemini, avec des identifiants à 9 caractères", async () => {
+    const bodies: { model: string; messages: ChatMessage[] }[] = [];
+    const fakeFetch = (async (_url: string, init: RequestInit) => {
+      bodies.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ choices: [{ message: { content: "Fini." } }] }));
+    }) as typeof fetch;
+    const client = new AiClient(t.ctx, fakeFetch);
+    const geminiCall = {
+      id: "function-call-1234567890",
+      type: "function" as const,
+      function: { name: "read_file", arguments: '{"path":"a.txt"}' },
+      extra_content: { google: { thought_signature: "signature" } },
+    };
+    const messages: ChatMessage[] = [
+      { role: "user", content: "Lis a.txt" },
+      { role: "assistant", content: null, tool_calls: [geminiCall] },
+      { role: "tool", tool_call_id: geminiCall.id, name: "read_file", content: "bonjour" },
+    ];
+    const tools = [
+      { type: "function" as const, function: { name: "read_file", description: "Lit", parameters: {} } },
+    ];
+    await client.toolTurn(parseChain("mistral:m", { mistral: "x" }), {
+      purpose: "essai-outils",
+      messages,
+      tools,
+    });
+    await client.toolTurn(parseChain("gemini:g", { gemini: "x" }), {
+      purpose: "essai-outils",
+      messages,
+      tools,
+    });
+
+    const [toMistral, toGemini] = bodies;
+    const sent = toMistral?.messages[1] as unknown as { tool_calls: Record<string, unknown>[] };
+    expect(sent.tool_calls[0]).not.toHaveProperty("extra_content");
+    expect(sent.tool_calls[0]?.id).toMatch(/^[a-zA-Z0-9]{9}$/);
+    expect((toMistral?.messages[2] as { tool_call_id: string }).tool_call_id).toBe(sent.tool_calls[0]?.id);
+    // Gemini retrouve sa signature telle quelle.
+    expect(toGemini?.messages[1]).toEqual(messages[1]);
+  });
+
+  it("laisse de côté un modèle au quota épuisé, le temps indiqué par le fournisseur", async () => {
+    const quota = JSON.stringify([{ error: { code: 429, details: [{ retryDelay: "30s" }] } }]);
+    const calledModels: string[] = [];
+    const fakeFetch = (async (_url: string, init: RequestInit) => {
+      const { model } = JSON.parse(String(init.body));
+      calledModels.push(model);
+      return model === "a"
+        ? new Response(quota, { status: 429 })
+        : new Response(JSON.stringify({ choices: [{ message: { content: "Fini." } }] }));
+    }) as typeof fetch;
+    const client = new AiClient(t.ctx, fakeFetch);
+    const chain = parseChain("gemini:a,groq:b", { gemini: "x", groq: "y" });
+    const turn = { purpose: "essai-pause", messages: [{ role: "user" as const, content: "?" }], tools: [] };
+    await client.toolTurn(chain, turn);
+    await client.toolTurn(chain, turn);
+    // Deux refus sur « a » (essai et nouvel essai), puis « b » ; au tour suivant, « a » est sauté.
+    expect(calledModels).toEqual(["a", "a", "b", "b"]);
   });
 
   it("ignore les fournisseurs sans clé", () => {

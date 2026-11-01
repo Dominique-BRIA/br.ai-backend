@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { AppContext } from "../context.ts";
 import { aiCalls } from "../db/schema.ts";
 import { afterAiUsage, creditRates, creditsFor } from "../services/credits.ts";
@@ -102,6 +103,8 @@ export class AiClient implements Ai {
   readonly #ctx: AppContext;
   readonly #fetch: typeof fetch;
   readonly #nextSlot = new Map<string, number>();
+  /** Modèles dont le quota gratuit est épuisé, et jusqu'à quand on les laisse de côté. */
+  readonly #pausedUntil = new Map<string, number>();
 
   constructor(ctx: AppContext, fetchImpl: typeof fetch = fetch) {
     this.#ctx = ctx;
@@ -128,7 +131,7 @@ export class AiClient implements Ai {
   async toolTurn(chain: ModelChoice[], request: ToolTurnRequest): Promise<ToolTurn> {
     return this.#firstSuccess(chain, request, async (choice) => {
       const message = await this.#call(choice, request, {
-        messages: request.messages,
+        messages: messagesFor(choice.provider.name, request.messages),
         tools: request.tools,
         tool_choice: "auto",
       });
@@ -146,7 +149,9 @@ export class AiClient implements Ai {
     run: (choice: ModelChoice) => Promise<T>,
   ) {
     const failures: string[] = [];
-    for (const choice of chain) {
+    // Un modèle au quota épuisé est sauté tant que sa pause dure, sauf si tous le sont.
+    const ready = chain.filter((choice) => (this.#pausedUntil.get(keyOf(choice)) ?? 0) <= Date.now());
+    for (const choice of ready.length > 0 ? ready : chain) {
       try {
         return await run(choice);
       } catch (error) {
@@ -181,7 +186,9 @@ export class AiClient implements Ai {
           continue;
         }
         if (!response.ok) {
-          throw new Error(`HTTP ${response.status} ${(await response.text()).slice(0, 200)}`);
+          const text = await response.text();
+          if (response.status === 429) this.#pause(choice, text, response.headers.get("retry-after"));
+          throw new Error(`HTTP ${response.status} ${text.slice(0, 200)}`);
         }
         const data = (await response.json()) as {
           choices?: { message?: RawMessage }[];
@@ -196,6 +203,16 @@ export class AiClient implements Ai {
         throw error;
       }
     }
+  }
+
+  /**
+   * Met de côté un modèle qui refuse encore après le nouvel essai : le temps indiqué par le
+   * fournisseur (« retryDelay » de Google, en-tête Retry-After), une minute sinon, dix au plus.
+   */
+  #pause(choice: ModelChoice, body: string, retryAfter: string | null): void {
+    const seconds = Number(/"retryDelay"\s*:\s*"(\d+)/.exec(body)?.[1] ?? retryAfter ?? 60);
+    const delay = Math.min(Number.isFinite(seconds) ? seconds : 60, 600) * 1000;
+    this.#pausedUntil.set(keyOf(choice), Date.now() + delay);
   }
 
   async #waitTurn(provider: string): Promise<void> {
@@ -236,6 +253,37 @@ export class AiClient implements Ai {
       this.#ctx.log.error({ err: cause }, "appel IA non journalisé");
     }
   }
+}
+
+const keyOf = (choice: ModelChoice) => `${choice.provider.name}:${choice.model}`;
+
+/**
+ * L'historique tel que chaque fournisseur l'accepte. Gemini ajoute à ses appels d'outils des
+ * champs à lui (extra_content, la signature de sa réflexion) qu'il veut retrouver tels quels ;
+ * les autres fournisseurs les refusent. Mistral exige en plus des identifiants de 9 lettres ou
+ * chiffres : les autres sont remplacés par une empreinte, la même pour l'appel et sa réponse.
+ */
+export function messagesFor(provider: string, messages: ChatMessage[]): ChatMessage[] {
+  if (provider === "gemini") return messages;
+  const id = (value: string) =>
+    provider === "mistral" && !/^[a-zA-Z0-9]{9}$/.test(value)
+      ? createHash("sha256").update(value).digest("hex").slice(0, 9)
+      : value;
+  return messages.map((message): ChatMessage => {
+    if (message.role === "assistant" && message.tool_calls) {
+      return {
+        role: "assistant",
+        content: message.content,
+        tool_calls: message.tool_calls.map((call) => ({
+          id: id(call.id),
+          type: "function",
+          function: { name: call.function.name, arguments: call.function.arguments },
+        })),
+      };
+    }
+    if (message.role === "tool") return { ...message, tool_call_id: id(message.tool_call_id) };
+    return message;
+  });
 }
 
 /**
