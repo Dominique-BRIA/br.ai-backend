@@ -24,11 +24,14 @@ const schema = z.object({
     ),
   /**
    * Modèles du cuisinier (ils doivent savoir appeler des outils), dans l'ordre d'essai : Gemini 3.6 Flash
-   * d'abord, plus fort en agent ; Codestral prend le relais quand l'offre gratuite de Gemini refuse.
+   * d'abord, plus fort en agent ; Codestral puis gpt-oss-120b (Groq) prennent le relais quand
+   * l'offre gratuite de Gemini refuse.
    */
   AI_CUISINIER_CHAIN: z
     .string()
-    .default("gemini:gemini-3.6-flash,mistral:codestral-latest,gemini:gemini-3.5-flash"),
+    .default(
+      "gemini:gemini-3.6-flash,mistral:codestral-latest,groq:openai/gpt-oss-120b,gemini:gemini-3.5-flash",
+    ),
   /** Clé maîtresse du coffre de secrets : 32 octets en base64. Sans elle, le coffre est fermé. */
   SECRETS_KEY: z.string().optional(),
   /** Dossier des pièces jointes quand Backblaze B2 n'est pas configuré. */
