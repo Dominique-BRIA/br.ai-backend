@@ -105,6 +105,7 @@ export function handleConnection(
       live = {
         connectionId,
         userId: session.userId,
+        email: session.email,
         sessionId: session.id,
         machine: message.machine,
         projects: new Set(),

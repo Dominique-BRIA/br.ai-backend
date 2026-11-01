@@ -1,10 +1,10 @@
-import { WS_PATH } from "@br-ia/protocol";
+import { type MaintenanceStatus, WS_PATH } from "@br-ia/protocol";
 import websocket from "@fastify/websocket";
 import Fastify, { type FastifyServerOptions } from "fastify";
 import { Kitchen } from "./agents/cuisinier.ts";
 import { ServeurAgent } from "./agents/serveur.ts";
 import { type Ai, AiClient, type ModelChoice } from "./ai/client.ts";
-import { requireAuth } from "./auth/sessions.ts";
+import { bearerToken, findSession, requireAuth } from "./auth/sessions.ts";
 import type { AppContext } from "./context.ts";
 import type { Database } from "./db/client.ts";
 import { registerErrorHandler } from "./http/errors.ts";
@@ -20,6 +20,7 @@ import { orderRoutes } from "./routes/orders.ts";
 import { secretRoutes } from "./routes/secrets.ts";
 import { teamRoutes } from "./routes/teams.ts";
 import type { Vault } from "./secrets/vault.ts";
+import { getMaintenance, maintenanceStatus, resumeMaintenance } from "./services/maintenance.ts";
 import { MemoryStorage, type Storage } from "./storage/storage.ts";
 import { handleConnection } from "./ws/connection.ts";
 
@@ -69,8 +70,16 @@ export async function buildApp(options: AppOptions) {
     ctx.summarize = (request) => serveur.summarize(request);
   } else app.log.warn("Agent serveur désactivé : aucune clé d'IA configurée.");
 
+  await resumeMaintenance(ctx);
   registerErrorHandler(app);
   await app.register(websocket);
+
+  app.get("/status", async (request): Promise<{ maintenance: MaintenanceStatus }> => {
+    // Avec une session, on dit aussi si ce compte garde l'accès pendant la maintenance.
+    const token = bearerToken(request);
+    const session = token ? await findSession(ctx, token).catch(() => null) : null;
+    return { maintenance: maintenanceStatus(await getMaintenance(ctx), session?.email) };
+  });
 
   app.get("/health", async (_request, reply) => {
     const databaseOk = await options.database.ping();

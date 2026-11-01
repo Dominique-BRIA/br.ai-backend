@@ -3,6 +3,8 @@ import type { MachineInfo, ServerEvent } from "@br-ia/protocol";
 export interface LiveConnection {
   connectionId: string;
   userId: string;
+  /** Adresse du compte, pour les exceptions de la maintenance. */
+  email: string;
   sessionId: string;
   machine: MachineInfo;
   /** Projets dont un dossier local est associé sur cette machine. */

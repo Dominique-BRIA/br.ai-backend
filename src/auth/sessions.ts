@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AppContext } from "../context.ts";
 import { sessions, users } from "../db/schema.ts";
 import { HttpError } from "../http/errors.ts";
+import { blockedByMaintenance } from "../services/maintenance.ts";
 import { newSessionToken, sha256 } from "./secrets.ts";
 
 declare module "fastify" {
@@ -23,7 +24,7 @@ export async function openSession(ctx: AppContext, userId: string, machineId: st
 /** Renvoie le membre et la session correspondant au jeton, ou `null` si le jeton est inconnu ou révoqué. */
 export async function findSession(ctx: AppContext, token: string) {
   const [session] = await ctx.db
-    .select({ id: sessions.id, userId: sessions.userId })
+    .select({ id: sessions.id, userId: sessions.userId, email: users.email })
     .from(sessions)
     .innerJoin(users, eq(users.id, sessions.userId))
     .where(and(eq(sessions.tokenHash, sha256(token)), isNull(sessions.revokedAt), isNull(users.suspendedAt)));
@@ -53,6 +54,10 @@ export function requireAuth(app: FastifyInstance, ctx: AppContext): void {
     const token = bearerToken(request);
     const session = token ? await findSession(ctx, token) : null;
     if (!session) throw new HttpError(401, "unauthenticated", "Connexion requise.");
+    // Pendant une maintenance, seuls les comptes en exception gardent l'accès.
+    if (await blockedByMaintenance(ctx, session.email)) {
+      throw new HttpError(503, "maintenance", "<br>.ia est en maintenance. Réessayez plus tard.");
+    }
     request.userId = session.userId;
     request.sessionId = session.id;
   });

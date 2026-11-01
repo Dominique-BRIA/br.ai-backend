@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { message, order } from "./models.ts";
+import { maintenanceStatus, message, order } from "./models.ts";
 
 /**
  * Version du protocole entre l'extension et le serveur.
@@ -129,6 +129,14 @@ const workspaceChanged = z.object({
  * Le serveur a relevé une préférence de travail du membre (« je fais mes push moi-même ») :
  * ses machines l'ajoutent à leur mémoire locale.
  */
+/** La maintenance a été annoncée, a commencé, ou la plateforme vient de rouvrir. */
+const platformStatus = z.object({
+  type: z.literal("platform.status"),
+  maintenance: maintenanceStatus,
+  /** Vrai à la réouverture, pour prévenir les membres. */
+  reopened: z.boolean(),
+});
+
 const preferenceNoted = z.object({
   type: z.literal("preference.noted"),
   text: z.string(),
@@ -159,6 +167,7 @@ export const serverMessage = z.discriminatedUnion("type", [
   memoryChanged,
   workspaceChanged,
   preferenceNoted,
+  platformStatus,
   toolCall,
   orderUpdated,
   error,
@@ -173,6 +182,7 @@ export type ServerEvent = Extract<
       | "memory.changed"
       | "workspace.changed"
       | "preference.noted"
+      | "platform.status"
       | "tool.call"
       | "order.updated";
   }

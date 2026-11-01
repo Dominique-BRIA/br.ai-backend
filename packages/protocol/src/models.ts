@@ -95,6 +95,18 @@ export type Message = z.infer<typeof message>;
 export const MESSAGE_MAX_LENGTH = 20_000;
 
 /** Une machine connectée au compte (une session). */
+/** État de la plateforme : aucune maintenance, une maintenance annoncée, ou en cours. */
+export const maintenanceStatus = z.object({
+  state: z.enum(["none", "scheduled", "ongoing"]),
+  startsAt: z.iso.datetime().nullable(),
+  /** Fin estimée, d'après la durée annoncée. */
+  endsAt: z.iso.datetime().nullable(),
+  message: z.object({ fr: z.string(), en: z.string() }),
+  /** Vrai si le compte qui demande garde l'accès pendant la maintenance. */
+  exempt: z.boolean(),
+});
+export type MaintenanceStatus = z.infer<typeof maintenanceStatus>;
+
 export const machineSession = z.object({
   id: z.uuid(),
   os: z.string().nullable(),

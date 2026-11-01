@@ -1,3 +1,4 @@
+import { scheduleMaintenanceBody } from "@br-ia/protocol";
 import { and, count, desc, eq, gte, ilike, inArray, isNull, or, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -17,6 +18,12 @@ import {
 } from "../db/schema.ts";
 import { HttpError, parse } from "../http/errors.ts";
 import { creditRates, currentMonth, saveCreditRates, teamUsage } from "../services/credits.ts";
+import {
+  getMaintenance,
+  maintenanceStatus,
+  reopenPlatform,
+  scheduleMaintenance,
+} from "../services/maintenance.ts";
 
 const idParams = z.object({ id: z.uuid() });
 const rate = z.object({ input: z.number().min(0).max(1000), output: z.number().min(0).max(1000) });
@@ -285,6 +292,24 @@ export function dashboardRoutes(
     const { status } = parse(z.object({ status: z.enum(["new", "in_progress", "done"]) }), request.body);
     const [row] = await ctx.db.update(feedback).set({ status }).where(eq(feedback.id, id)).returning();
     if (!row) throw new HttpError(404, "not_found", "Retour introuvable.");
+    return { ok: true };
+  });
+
+  app.get("/admin/maintenance", async () => {
+    const maintenance = await getMaintenance(ctx);
+    return { maintenance, status: maintenanceStatus(maintenance) };
+  });
+
+  /** Programme une maintenance ; les machines connectées sont prévenues tout de suite. */
+  app.put("/admin/maintenance", async (request) => {
+    const body = parse(scheduleMaintenanceBody, request.body);
+    await scheduleMaintenance(ctx, body);
+    return { status: maintenanceStatus(body) };
+  });
+
+  /** Rouvre la plateforme d'un clic, avec une notification aux membres. */
+  app.delete("/admin/maintenance", async () => {
+    await reopenPlatform(ctx);
     return { ok: true };
   });
 

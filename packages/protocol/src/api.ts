@@ -46,6 +46,7 @@ export const apiErrorCode = z.enum([
   "promo_already_used",
   "promo_not_eligible",
   "account_suspended",
+  "maintenance",
 ]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 
@@ -386,6 +387,26 @@ export const promoCode = z.object({
   createdAt: z.iso.datetime(),
 });
 export type PromoCode = z.infer<typeof promoCode>;
+
+// Maintenance
+
+/** PUT /admin/maintenance — programme une maintenance. */
+export const scheduleMaintenanceBody = z.object({
+  startsAt: z.iso.datetime(),
+  durationMinutes: z
+    .number()
+    .int()
+    .min(1)
+    .max(7 * 24 * 60),
+  messageFr: z.string().trim().min(1).max(500),
+  messageEn: z.string().trim().min(1).max(500),
+  /** Adresses des comptes qui gardent l'accès. */
+  exceptions: z
+    .array(z.email().transform((value) => value.toLowerCase()))
+    .max(100)
+    .default([]),
+});
+export type ScheduleMaintenanceBody = z.input<typeof scheduleMaintenanceBody>;
 
 // Retours des testeurs
 
