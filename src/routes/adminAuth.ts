@@ -7,6 +7,7 @@ import { newSessionToken, sha256 } from "../auth/secrets.ts";
 import type { AppContext } from "../context.ts";
 import { adminAccounts, adminSessions } from "../db/schema.ts";
 import { HttpError, parse } from "../http/errors.ts";
+import { recordAudit } from "../services/audit.ts";
 
 /** Durée d'une session du tableau de bord. */
 const SESSION_MS = 12 * 60 * 60_000;
@@ -100,6 +101,14 @@ export function adminAuthRoutes(app: FastifyInstance, ctx: AppContext): void {
     const valid = account && !account.disabledAt && (await verifyPassword(password, account.passwordHash));
     if (!account || !valid) {
       recentFailures(email).push(Date.now());
+      await recordAudit(ctx, {
+        adminId: account?.id ?? null,
+        actor: account?.name ?? email,
+        action: "Connexion refusée",
+        request,
+        statusCode: 401,
+        detail: `email : ${email}`,
+      });
       throw new HttpError(401, "unauthenticated", "Adresse ou mot de passe incorrect.");
     }
     failures.delete(email);
@@ -110,6 +119,13 @@ export function adminAuthRoutes(app: FastifyInstance, ctx: AppContext): void {
       .update(adminAccounts)
       .set({ lastLoginAt: new Date() })
       .where(eq(adminAccounts.id, account.id));
+    await recordAudit(ctx, {
+      adminId: account.id,
+      actor: account.name,
+      action: "Connexion",
+      request,
+      statusCode: 200,
+    });
     return { token, expiresAt: expiresAt.toISOString(), admin: { email: account.email, name: account.name } };
   });
 
@@ -152,6 +168,16 @@ export function adminAuthRoutes(app: FastifyInstance, ctx: AppContext): void {
     }
     if (Object.keys(changes).length > 0) {
       await ctx.db.update(adminAccounts).set(changes).where(eq(adminAccounts.id, session.adminId));
+      await recordAudit(ctx, {
+        adminId: session.adminId,
+        actor: changes.name ?? session.name,
+        action: "Profil modifié",
+        request,
+        statusCode: 200,
+        detail: Object.entries(changes)
+          .map(([key, value]) => `${key} : ${value}`)
+          .join(" · "),
+      });
     }
     return { admin: { email: changes.email ?? session.email, name: changes.name ?? session.name } };
   });
@@ -180,16 +206,33 @@ export function adminAuthRoutes(app: FastifyInstance, ctx: AppContext): void {
           ne(adminSessions.id, session.sessionId),
         ),
       );
+    await recordAudit(ctx, {
+      adminId: session.adminId,
+      actor: session.name,
+      action: "Mot de passe changé",
+      request,
+      statusCode: 200,
+    });
     return { ok: true };
   });
 
   app.post("/admin-auth/logout", async (request, reply) => {
     const token = sessionToken(request);
     if (token) {
+      const session = await findAdminSession(ctx, token);
       await ctx.db
         .update(adminSessions)
         .set({ revokedAt: new Date() })
         .where(eq(adminSessions.tokenHash, sha256(token)));
+      if (session) {
+        await recordAudit(ctx, {
+          adminId: session.adminId,
+          actor: session.name,
+          action: "Déconnexion",
+          request,
+          statusCode: 204,
+        });
+      }
     }
     return reply.code(204).send();
   });

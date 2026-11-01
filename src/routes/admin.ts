@@ -1,7 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { createPromoBody, type PromoCode } from "@br-ia/protocol";
 import { desc, eq } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { ModelChoice } from "../ai/client.ts";
 import { allowed, requiredPermission } from "../auth/adminPermissions.ts";
@@ -9,10 +9,12 @@ import { newInvitationCode } from "../auth/secrets.ts";
 import type { AppContext } from "../context.ts";
 import { betaInvites, promoCodes } from "../db/schema.ts";
 import { HttpError, parse } from "../http/errors.ts";
+import { auditDetail, describeAction, recordAudit } from "../services/audit.ts";
 import { createPromoCodes, toPromoCode } from "../services/promo.ts";
 import { adminAccountRoutes, findAdminSession } from "./adminAuth.ts";
 import { betaRequestAdminRoutes } from "./beta.ts";
 import { dashboardRoutes } from "./dashboard.ts";
+import { insightRoutes } from "./insights.ts";
 
 const createBetaInviteBody = z.object({
   maxUses: z.number().int().min(1).max(1000).default(1),
@@ -30,6 +32,9 @@ export function adminRoutes(
   adminToken: string | undefined,
   chains: { serveur: ModelChoice[]; cuisinier: ModelChoice[] } = { serveur: [], cuisinier: [] },
 ): void {
+  // Qui fait la requête, pour le journal : un compte de l'équipe interne, ou le jeton du serveur.
+  const actors = new WeakMap<FastifyRequest, { id: string | null; name: string }>();
+
   app.addHook("preHandler", async (request) => {
     // Une session ouverte par un compte de l'équipe interne (tableau de bord)…
     const session = request.headers["x-admin-session"];
@@ -44,6 +49,7 @@ export function adminRoutes(
           "Votre compte n'a pas accès à cette partie du tableau de bord.",
         );
       }
+      actors.set(request, { id: account.adminId, name: account.name });
       return;
     }
     // … ou le jeton d'administration du serveur (scripts, premier compte).
@@ -51,12 +57,30 @@ export function adminRoutes(
     if (!adminToken || typeof given !== "string" || !sameSecret(given, adminToken)) {
       throw new HttpError(401, "unauthenticated", "Accès réservé à l'équipe interne.");
     }
+    actors.set(request, { id: null, name: "Jeton du serveur" });
+  });
+
+  // Chaque modification réussie entre au journal ; les lectures et les refus n'y vont pas.
+  app.addHook("onResponse", async (request, reply) => {
+    const actor = actors.get(request);
+    if (!actor || request.method === "GET" || reply.statusCode >= 400) return;
+    const params = request.params as { id?: string } | undefined;
+    await recordAudit(ctx, {
+      adminId: actor.id,
+      actor: actor.name,
+      action: describeAction(request.method, request.routeOptions.url ?? request.url),
+      request,
+      statusCode: reply.statusCode,
+      targetId: params?.id ?? null,
+      detail: auditDetail(request.body),
+    });
   });
 
   adminAccountRoutes(app, ctx);
   betaRequestAdminRoutes(app, ctx);
 
   dashboardRoutes(app, ctx, chains);
+  insightRoutes(app, ctx);
 
   app.get("/admin/promo-codes", async (): Promise<{ codes: PromoCode[] }> => {
     const rows = await ctx.db.select().from(promoCodes).orderBy(desc(promoCodes.createdAt)).limit(500);

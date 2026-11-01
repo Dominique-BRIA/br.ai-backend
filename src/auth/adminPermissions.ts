@@ -5,6 +5,7 @@
  * ouvertes à tous les comptes.
  */
 export const ADMIN_PERMISSIONS = [
+  "statistiques",
   "utilisateurs",
   "equipes",
   "couts",
@@ -14,6 +15,7 @@ export const ADMIN_PERMISSIONS = [
   "maintenance",
   "comptes",
   "reglages",
+  "journal",
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSIONS)[number];
@@ -28,6 +30,8 @@ export const ADMIN_GRANTS = ADMIN_PERMISSIONS.flatMap((permission) => [
 const OPEN = new Set(["GET /admin/overview", "GET /admin/plans"]);
 
 const BY_PREFIX: [string, AdminPermission][] = [
+  ["/admin/statistics", "statistiques"],
+  ["/admin/audit", "journal"],
   ["/admin/users", "utilisateurs"],
   ["/admin/teams", "equipes"],
   ["/admin/costs", "couts"],

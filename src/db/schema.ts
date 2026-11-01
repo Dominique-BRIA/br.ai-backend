@@ -462,6 +462,30 @@ export const adminAccounts = pgTable("admin_accounts", {
   createdAt: createdAt(),
 });
 
+/**
+ * Journal des actions de l'équipe interne : chaque modification faite depuis le tableau de bord
+ * (ou par le jeton du serveur), et les connexions. Les simples lectures n'y figurent pas.
+ */
+export const adminAudit = pgTable(
+  "admin_audit",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    adminId: uuid().references(() => adminAccounts.id, { onDelete: "set null" }),
+    /** Nom au moment de l'action, gardé si le compte change ou disparaît. */
+    actor: text().notNull(),
+    action: text().notNull(),
+    method: text().notNull(),
+    route: text().notNull(),
+    targetId: text(),
+    /** Ce qui a été envoyé, sans mot de passe ni jeton. */
+    detail: text(),
+    statusCode: integer().notNull(),
+    ip: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.createdAt), index().on(t.action)],
+);
+
 /** Sessions du tableau de bord : seule l'empreinte du jeton est gardée. */
 export const adminSessions = pgTable(
   "admin_sessions",
