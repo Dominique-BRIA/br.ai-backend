@@ -17,7 +17,9 @@ import { meRoutes } from "./routes/me.ts";
 import { memoryRoutes } from "./routes/memory.ts";
 import { messageRoutes } from "./routes/messages.ts";
 import { orderRoutes } from "./routes/orders.ts";
+import { secretRoutes } from "./routes/secrets.ts";
 import { teamRoutes } from "./routes/teams.ts";
+import type { Vault } from "./secrets/vault.ts";
 import { MemoryStorage, type Storage } from "./storage/storage.ts";
 import { handleConnection } from "./ws/connection.ts";
 
@@ -31,6 +33,8 @@ export interface AppOptions {
   /** Par défaut, les fichiers sont gardés en mémoire (tests). */
   storage?: Storage;
   adminToken?: string;
+  /** Chiffrement du coffre de secrets ; sans lui, le coffre est fermé. */
+  vault?: Vault | null;
   /** Modèles de l'agent serveur, dans l'ordre d'essai. Vide : agent désactivé. */
   serveurChain?: ModelChoice[];
   /** Modèles du cuisinier, dans l'ordre d'essai. Vide : cuisinier désactivé. */
@@ -50,6 +54,7 @@ export async function buildApp(options: AppOptions) {
     log: app.log,
     onMemberMessage: () => {},
     summarize: async () => null,
+    vault: options.vault ?? null,
     kitchen: { onMachineStatus() {}, onToolResult() {}, onConnectionClosed() {} },
   };
   const ai = options.ai ?? new AiClient(ctx);
@@ -88,6 +93,7 @@ export async function buildApp(options: AppOptions) {
     messageRoutes(scope, ctx);
     attachmentRoutes(scope, ctx);
     meRoutes(scope, ctx);
+    secretRoutes(scope, ctx);
     memoryRoutes(scope, ctx);
     orderRoutes(scope, ctx, kitchen);
   });

@@ -30,6 +30,7 @@ export async function listNotifications(ctx: AppContext, userId: string): Promis
       body: messages.body,
       createdAt: messages.createdAt,
       authorName: users.displayName,
+      authorKind: messages.authorKind,
       ...place,
     })
     .from(messages)
@@ -102,7 +103,8 @@ export async function listNotifications(ctx: AppContext, userId: string): Promis
       projectName: row.projectName,
       teamName: row.teamName,
       messageId: row.id,
-      author: row.authorName ?? "",
+      // Un agent qui mentionne le membre (un rappel du serveur, par exemple) est désigné par son rôle.
+      author: row.authorName ?? row.authorKind,
       text: excerpt(row.body),
       orderStatus: null,
       createdAt: row.createdAt.toISOString(),

@@ -18,6 +18,7 @@ import type { AppContext } from "../context.ts";
 import { projects, teamInvitations, teamMembers, teams } from "../db/schema.ts";
 import { forbidden, HttpError, notFound, parse } from "../http/errors.ts";
 import { memberIds, requireChef, requireMember, roleIn } from "../services/access.ts";
+import { revokeSecretsOnDeparture } from "../services/secrets.ts";
 import { buildTeam, buildWorkspace } from "../services/workspace.ts";
 
 const INVITATION_TTL_MS = 7 * 24 * 60 * 60_000;
@@ -108,6 +109,7 @@ export function teamRoutes(app: FastifyInstance, ctx: AppContext): void {
       .delete(teamMembers)
       .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, userId)));
     await notifyTeam(teamId, [userId]);
+    await revokeSecretsOnDeparture(ctx, teamId, userId);
     return reply.code(204).send();
   });
 
@@ -145,6 +147,7 @@ export function teamRoutes(app: FastifyInstance, ctx: AppContext): void {
       .delete(teamMembers)
       .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, request.userId)));
     await notifyTeam(teamId, [request.userId]);
+    await revokeSecretsOnDeparture(ctx, teamId, request.userId);
     return reply.code(204).send();
   });
 

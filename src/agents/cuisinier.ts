@@ -15,6 +15,7 @@ import type { LiveConnection } from "../realtime/hub.ts";
 import { memberIds } from "../services/access.ts";
 import { announceMemoryChange, setMemoryStatus } from "../services/memory.ts";
 import { postAgentMessage } from "../services/messages.ts";
+import { secretNames } from "../services/secrets.ts";
 
 /** Nombre maximal de tours de l'IA pour une commande. */
 const MAX_TURNS = 40;
@@ -277,6 +278,7 @@ export class Kitchen implements KitchenHooks {
       .select({ content: localMemories.content })
       .from(localMemories)
       .where(eq(localMemories.userId, machine.userId));
+    const secrets = await secretNames(this.#ctx, order.projectId);
     const messages: ChatMessage[] = [
       { role: "system", content: SYSTEM_PROMPT },
       {
@@ -297,6 +299,12 @@ export class Kitchen implements KitchenHooks {
                 "",
                 `Préférences de travail de ${ownerName} (sa mémoire locale), à respecter :`,
                 preferences.content.trim(),
+              ]
+            : []),
+          ...(secrets.length > 0
+            ? [
+                "",
+                `Secrets du coffre du projet (noms seulement) : ${secrets.join(", ")}. Pour un .env, utilise write_env ; ne demande jamais une valeur.`,
               ]
             : []),
         ].join("\n"),
@@ -368,6 +376,12 @@ export class Kitchen implements KitchenHooks {
             );
           } else if (name === "read_file" && path) {
             await this.#step(order.id, "read", `Lu : ${path}`);
+          } else if (name === "write_env") {
+            await this.#step(
+              order.id,
+              "write",
+              result.ok ? `Fichier ${path} écrit depuis le coffre` : `Fichier ${path} non écrit`,
+            );
           }
           await this.#publish(order.id, teamId);
           messages.push(toolMessage(call.id, name, truncate(result.output)));

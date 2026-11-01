@@ -24,6 +24,8 @@ const schema = z.object({
     ),
   /** Modèles du cuisinier (ils doivent savoir appeler des outils), dans l'ordre d'essai. */
   AI_CUISINIER_CHAIN: z.string().default("mistral:codestral-latest,gemini:gemini-3.5-flash"),
+  /** Clé maîtresse du coffre de secrets : 32 octets en base64. Sans elle, le coffre est fermé. */
+  SECRETS_KEY: z.string().optional(),
   /** Dossier des pièces jointes quand Backblaze B2 n'est pas configuré. */
   FILES_DIR: z.string().default(".data/files"),
   /** Backblaze B2 : les quatre variables, ou aucune. */

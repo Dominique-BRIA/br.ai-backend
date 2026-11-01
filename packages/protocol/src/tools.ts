@@ -49,6 +49,13 @@ export const cookTools = {
     description: "Indique le système, l'interpréteur de commandes et les versions des outils installés.",
     input: z.object({}),
   },
+  write_env: {
+    description:
+      "Écrit le fichier .env du projet avec les secrets du coffre auxquels le propriétaire de la machine a accès, et l'ajoute au .gitignore. Tu ne vois jamais les valeurs : seulement les noms écrits.",
+    input: z.object({
+      path: z.string().default(".env").describe("Chemin du fichier, relatif au dossier du projet."),
+    }),
+  },
 } as const;
 
 export type CookToolName = keyof typeof cookTools;

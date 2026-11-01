@@ -92,6 +92,8 @@ export async function postAgentMessage(
     kind: "serveur" | "cuisinier";
     body: string;
     replyToId?: string;
+    /** Membres à prévenir : le message apparaît dans leurs notifications. */
+    mentions?: string[];
   },
 ): Promise<Message> {
   const [row] = await ctx.db
@@ -101,6 +103,7 @@ export async function postAgentMessage(
       authorKind: options.kind,
       body: options.body,
       replyToId: options.replyToId,
+      mentions: options.mentions ?? [],
     })
     .returning({ id: messages.id });
   const message = row && (await loadMessage(ctx, row.id));

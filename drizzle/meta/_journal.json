@@ -36,6 +36,13 @@
       "when": 1793523558595,
       "tag": "0004_memoire_locale",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793524502078,
+      "tag": "0005_coffre_de_secrets",
+      "breakpoints": true
     }
   ]
 }

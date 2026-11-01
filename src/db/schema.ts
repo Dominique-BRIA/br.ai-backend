@@ -265,3 +265,56 @@ export const localMemories = pgTable("local_memories", {
   content: text().notNull(),
   updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Secrets d'un projet. La valeur est chiffrée (AES-256-GCM) avec une clé qui n'est jamais
+ * en base : elle vit dans les variables d'environnement du serveur.
+ */
+export const projectSecrets = pgTable(
+  "project_secrets",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    projectId: uuid()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text().notNull(),
+    /** Valeur chiffrée, vecteur d'initialisation et étiquette d'authentification, en base64. */
+    ciphertext: text().notNull(),
+    iv: text().notNull(),
+    tag: text().notNull(),
+    createdBy: uuid().references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+    updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex().on(t.projectId, t.name)],
+);
+
+/** Membres autorisés à récupérer un secret (le chef l'est toujours). */
+export const secretAccess = pgTable(
+  "secret_access",
+  {
+    secretId: uuid()
+      .notNull()
+      .references(() => projectSecrets.id, { onDelete: "cascade" }),
+    userId: uuid()
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (t) => [primaryKey({ columns: [t.secretId, t.userId] })],
+);
+
+/** Journal du coffre : qui a créé, modifié, supprimé ou récupéré quel secret, et quand. */
+export const secretLog = pgTable(
+  "secret_log",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    projectId: uuid()
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    secretName: text().notNull(),
+    action: text().$type<"created" | "updated" | "deleted" | "read">().notNull(),
+    userId: uuid().references(() => users.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.projectId, t.createdAt)],
+);

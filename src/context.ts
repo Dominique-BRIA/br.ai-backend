@@ -4,6 +4,7 @@ import type { KitchenHooks } from "./agents/cuisinier.ts";
 import type { Database } from "./db/client.ts";
 import type { Mailer } from "./mail/mailer.ts";
 import type { RealtimeHub } from "./realtime/hub.ts";
+import type { Vault } from "./secrets/vault.ts";
 import type { Storage } from "./storage/storage.ts";
 
 /** Ce qu'il faut pour résumer à un membre ce qui s'est passé pendant son absence. */
@@ -22,6 +23,8 @@ export interface AppContext {
   hub: RealtimeHub;
   mailer: Mailer;
   storage: Storage;
+  /** Chiffrement du coffre de secrets ; `null` si le serveur n'a pas de clé. */
+  vault: Vault | null;
   /** Appelé après chaque message d'un membre : l'agent serveur le traite en arrière-plan. */
   onMemberMessage: (message: Message, teamId: string) => void;
   /** Résumé « pendant ton absence » écrit par l'agent serveur ; `null` sans IA disponible. */

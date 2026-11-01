@@ -36,6 +36,8 @@ export const apiErrorCode = z.enum([
   "chef_must_transfer",
   "already_member",
   "file_too_large",
+  "vault_disabled",
+  "secret_exists",
 ]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 
@@ -266,3 +268,66 @@ export const localMemory = z.object({
 export type LocalMemory = z.infer<typeof localMemory>;
 export const saveLocalMemoryBody = z.object({ content: z.string().max(20_000) });
 export type SaveLocalMemoryBody = z.input<typeof saveLocalMemoryBody>;
+
+// Coffre de secrets
+
+/** Nom d'une variable d'environnement : lettres capitales, chiffres et soulignés. */
+export const secretName = z
+  .string()
+  .trim()
+  .regex(/^[A-Z][A-Z0-9_]{0,99}$/, "Nom en capitales, chiffres et soulignés (par exemple DATABASE_URL).");
+
+/** Un secret, sans sa valeur : seul son nom circule. */
+export const projectSecret = z.object({
+  id: z.uuid(),
+  name: z.string(),
+  /** Membres qui peuvent le récupérer ; le chef y a toujours accès. Vide pour un membre. */
+  access: z.array(z.uuid()),
+  updatedAt: z.iso.datetime(),
+});
+export type ProjectSecret = z.infer<typeof projectSecret>;
+
+/** GET /projects/:projectId/secrets — tous pour le chef, ceux qui lui sont ouverts pour un membre. */
+export const secretsResponse = z.object({
+  /** Faux si le serveur n'a pas de clé de chiffrement : le coffre est indisponible. */
+  enabled: z.boolean(),
+  secrets: z.array(projectSecret),
+});
+export type SecretsResponse = z.infer<typeof secretsResponse>;
+
+/** POST /projects/:projectId/secrets — réservé au chef. */
+export const createSecretBody = z.object({
+  name: secretName,
+  value: z.string().min(1).max(10_000),
+  access: z.array(z.uuid()).max(200).default([]),
+});
+export type CreateSecretBody = z.input<typeof createSecretBody>;
+
+/** PATCH /secrets/:secretId — nouvelle valeur et/ou nouveaux accès, réservé au chef. */
+export const updateSecretBody = z.object({
+  value: z.string().min(1).max(10_000).optional(),
+  access: z.array(z.uuid()).max(200).optional(),
+});
+export type UpdateSecretBody = z.input<typeof updateSecretBody>;
+
+/** POST /projects/:projectId/secrets/values — les valeurs ouvertes au membre, pour écrire le .env. */
+export const secretValuesResponse = z.object({
+  values: z.array(z.object({ name: z.string(), value: z.string() })),
+});
+export type SecretValuesResponse = z.infer<typeof secretValuesResponse>;
+
+export const secretAction = z.enum(["created", "updated", "deleted", "read"]);
+
+/** GET /projects/:projectId/secrets/log — réservé au chef, du plus récent au plus ancien. */
+export const secretLogResponse = z.object({
+  entries: z.array(
+    z.object({
+      id: z.uuid(),
+      secretName: z.string(),
+      action: secretAction,
+      userName: z.string(),
+      createdAt: z.iso.datetime(),
+    }),
+  ),
+});
+export type SecretLogResponse = z.infer<typeof secretLogResponse>;
