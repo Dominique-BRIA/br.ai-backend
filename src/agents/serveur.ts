@@ -54,7 +54,7 @@ export function parseServeurOutput(content: string): ServeurOutput | null {
   }
 }
 
-const SYSTEM_PROMPT = `Tu es le serveur de br.ia : un agent présent dans le chat d'une équipe qui travaille sur un projet.
+const SYSTEM_PROMPT = `Tu es le serveur de <br>.ia : un agent présent dans le chat d'une équipe qui travaille sur un projet.
 Les membres discutent entre eux ; tu écoutes tout, tu tiens la mémoire du projet et tu n'interviens que lorsque c'est utile.
 
 Pour chaque nouveau message, classe-le dans une catégorie :

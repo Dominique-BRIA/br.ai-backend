@@ -98,6 +98,10 @@ export const createInvitationResponse = z.object({
 });
 export type CreateInvitationResponse = z.infer<typeof createInvitationResponse>;
 
+/** GET /teams/:teamId/invitations/current — la clé encore valable la plus récente, réservé au chef. */
+export const currentInvitationResponse = z.object({ invitation: createInvitationResponse.nullable() });
+export type CurrentInvitationResponse = z.infer<typeof currentInvitationResponse>;
+
 /** POST /invitations/accept */
 export const acceptInvitationBody = z.object({ code: invitationCode });
 export type AcceptInvitationBody = z.input<typeof acceptInvitationBody>;

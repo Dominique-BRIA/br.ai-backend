@@ -1,10 +1,10 @@
-# br.ia — Document de vision
+# \<br\>.ia — Document de vision
 
 _Version 1, 31 octobre 2026. Auteur : Dominique Bria._
 
 ## En une phrase
 
-br.ia est un chat d'équipe autour d'un projet, dans lequel l'IA est à la fois le chef d'orchestre, qui écoute, note et arbitre, et la main-d'œuvre, qui produit le code et les documents demandés.
+\<br\>.ia est un chat d'équipe autour d'un projet, dans lequel l'IA est à la fois le chef d'orchestre, qui écoute, note et arbitre, et la main-d'œuvre, qui produit le code et les documents demandés.
 
 ## Le problème
 
@@ -19,11 +19,11 @@ Les outils de groupe qui existent (discussions de groupe de ChatGPT, Mantle Chat
 - Les freelances qui s'associent sur un projet.
 - Une personne seule qui porte toutes les casquettes.
 
-br.ia ne gère pas de relation client-prestataire : tout le monde travaille dans la même équipe.
+\<br\>.ia ne gère pas de relation client-prestataire : tout le monde travaille dans la même équipe.
 
 ## Le concept : un serveur et un cuisinier
 
-br.ia repose sur deux agents, comme dans un restaurant.
+\<br\>.ia repose sur deux agents, comme dans un restaurant.
 
 |               | Agent serveur (en salle)                                                          | Agent cuisinier (en cuisine)                           |
 | ------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------ |
@@ -43,7 +43,7 @@ Les membres se parlent aussi entre eux. Le serveur ne répond donc pas à chaque
 - **une contradiction entre deux membres** : il la signale et propose un compromis ;
 - **une demande de livrable** : il passe la commande en cuisine.
 
-C'est ce qui distingue br.ia d'une IA de groupe qui ne parle que quand on l'appelle.
+C'est ce qui distingue \<br\>.ia d'une IA de groupe qui ne parle que quand on l'appelle.
 
 ## L'équipe
 
@@ -55,11 +55,11 @@ C'est ce qui distingue br.ia d'une IA de groupe qui ne parle que quand on l'appe
 
 ## La cuisine itinérante
 
-Le cuisinier ne travaille pas sur les serveurs de br.ia. Il travaille sur les machines des membres, grâce à l'extension VS Code. La plateforme ne garde que le léger (conversations, notes, décisions, état des tâches), ce qui limite fortement les coûts d'hébergement.
+Le cuisinier ne travaille pas sur les serveurs de \<br\>.ia. Il travaille sur les machines des membres, grâce à l'extension VS Code. La plateforme ne garde que le léger (conversations, notes, décisions, état des tâches), ce qui limite fortement les coûts d'hébergement.
 
 ### Le cycle de travail
 
-1. L'équipe installe l'application GitHub de br.ia sur son dépôt et le branche dans le chat. Les accès se règlent dépôt par dépôt, sans compte partagé.
+1. L'équipe installe l'application GitHub de \<br\>.ia sur son dépôt et le branche dans le chat. Les accès se règlent dépôt par dépôt, sans compte partagé.
 2. Le cuisinier travaille par défaut sur la machine du membre qui a passé la commande, s'il est connecté, par exemple Ali. Il lit et écrit les fichiers et lance les commandes.
 3. À la fin de chaque tâche testée, il pousse sur GitHub, selon les accès qu'Ali lui a donnés ou à sa demande.
 4. Les autres membres reçoivent une notification : « Nouvelle version disponible, la récupérer ? » S'ils acceptent, le cuisinier lance la récupération sur leur machine, après avoir vérifié qu'ils n'ont pas de travail en cours non enregistré.
@@ -74,7 +74,7 @@ Le cuisinier ne travaille pas sur les serveurs de br.ia. Il travaille sur les ma
 
 ## L'extension VS Code
 
-VS Code est le client principal de br.ia. Tout s'y fait : création de compte, chat, conversations, notifications. Un membre n'a pas besoin d'aller sur le site.
+VS Code est le client principal de \<br\>.ia. Tout s'y fait : création de compte, chat, conversations, notifications. Un membre n'a pas besoin d'aller sur le site.
 
 L'extension sera aussi publiée sur Open VSX, pour fonctionner dans Cursor et Windsurf.
 
@@ -97,7 +97,7 @@ Les préférences de chaque membre se négocient dans le chat, par exemple « je
 
 ### Le coffre de secrets
 
-Les fichiers `.env` (mots de passe, clés d'API) ne vont jamais sur GitHub. br.ia les gère ainsi :
+Les fichiers `.env` (mots de passe, clés d'API) ne vont jamais sur GitHub. \<br\>.ia les gère ainsi :
 
 1. Le chef dépose les secrets depuis l'extension, sous la forme nom + valeur.
 2. Ils sont stockés sur le serveur avec un chiffrement simple.
@@ -105,11 +105,11 @@ Les fichiers `.env` (mots de passe, clés d'API) ne vont jamais sur GitHub. br.i
 4. Quand le cuisinier arrive sur une machine, l'extension écrit le `.env` en local, en vérifiant qu'il figure dans `.gitignore`.
 5. **L'IA ne voit jamais la valeur des secrets.** Elle connaît leur nom, pas leur contenu. L'extension masque toute valeur secrète qui apparaîtrait dans le résultat d'une commande.
 6. Un journal enregistre qui a récupéré quel secret, et quand.
-7. Quand un membre quitte l'équipe, br.ia rappelle au chef de changer les clés concernées.
+7. Quand un membre quitte l'équipe, \<br\>.ia rappelle au chef de changer les clés concernées.
 
 ## Les tableaux de bord
 
-### Le tableau de bord d'administration (équipe interne de br.ia)
+### Le tableau de bord d'administration (équipe interne de \<br\>.ia)
 
 Sur le site web, accessible uniquement à l'équipe interne :
 
@@ -133,7 +133,7 @@ Dans l'extension VS Code, avec un lien vers le site pour le paiement :
 
 ## Les IA utilisées
 
-br.ia s'appuie sur plusieurs fournisseurs : Claude, ChatGPT, Gemini, etc. Le serveur lit tous les messages : il utilise donc un modèle rapide et bon marché. Le cuisinier, qui produit, utilise un modèle plus puissant.
+\<br\>.ia s'appuie sur plusieurs fournisseurs : Claude, ChatGPT, Gemini, etc. Le serveur lit tous les messages : il utilise donc un modèle rapide et bon marché. Le cuisinier, qui produit, utilise un modèle plus puissant.
 
 - **Serveur :** un modèle rapide de Claude ou de ChatGPT.
 - **Cuisinier :** Claude.
@@ -187,14 +187,14 @@ La consommation d'IA se compte en crédits. Un message traité par le serveur co
 Ils ont une place importante dans la stratégie commerciale.
 
 - **Ce qu'un code peut offrir :** une réduction en pourcentage ou d'un montant fixe, une formule offerte pendant une durée donnée, des crédits en bonus, un essai prolongé.
-- **Durée de l'effet :** une seule fois, ou pendant X mois. L'effet « pour toujours » est réservé à l'équipe interne de br.ia.
+- **Durée de l'effet :** une seule fois, ou pendant X mois. L'effet « pour toujours » est réservé à l'équipe interne de \<br\>.ia.
 - **Limites :** date d'expiration, nombre maximal d'utilisations, une seule utilisation par compte, réservé aux nouveaux clients, réservé à une formule.
 - **Trois sortes de codes :** public pour une campagne (`LANCEMENT`), unique et généré en lot pour une école ou un partenaire, parrainage (le parrain et le filleul gagnent des crédits).
 - **Saisie :** dans l'extension VS Code ou au moment du paiement sur le site.
 - **Administration :** un tableau de bord pour créer les codes, suivre leur utilisation et les désactiver.
 - **Garde-fou :** une formule offerte garde les mêmes quotas qu'une formule payante, et chaque code a un nombre limité d'utilisations.
 
-## Ce qui distingue br.ia
+## Ce qui distingue \<br\>.ia
 
 En octobre 2026, aucun outil connu ne combine :
 
@@ -222,7 +222,7 @@ On teste avec des camarades, sans paiement.
 
 - L'accès se fait par invitation, avec des codes uniques.
 - Les formules sont attribuées depuis le tableau de bord d'administration.
-- Les quotas de crédits restent actifs : pendant la bêta, les coûts d'IA sont entièrement à la charge de br.ia.
+- Les quotas de crédits restent actifs : pendant la bêta, les coûts d'IA sont entièrement à la charge de \<br\>.ia.
 - Les retours des testeurs sont recueillis directement dans l'extension.
 
 ### Étape 3 — Maintenance
@@ -238,7 +238,7 @@ On met la plateforme en maintenance pour intégrer le paiement. Le mode maintena
 
 ### Étape 4 — Paiement et lancement
 
-On intègre le paiement, puis on ouvre br.ia au public.
+On intègre le paiement, puis on ouvre \<br\>.ia au public.
 
 ## Questions ouvertes pour le cahier des charges
 

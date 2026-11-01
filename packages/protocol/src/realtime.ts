@@ -21,6 +21,17 @@ const machineInfo = z.object({
   editor: z.string().max(100),
   editorVersion: z.string().max(50),
   extensionVersion: z.string().max(50),
+  /**
+   * Dossiers de la personne sur cette machine, pour que le cuisinier n'invente pas de chemin
+   * quand on lui demande d'écrire ailleurs que dans le projet (« sur le Bureau »).
+   */
+  folders: z
+    .object({
+      home: z.string().max(500),
+      desktop: z.string().max(500),
+      documents: z.string().max(500),
+    })
+    .optional(),
 });
 export type MachineInfo = z.infer<typeof machineInfo>;
 

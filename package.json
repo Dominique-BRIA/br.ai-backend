@@ -2,7 +2,7 @@
   "name": "br-ia-backend",
   "version": "0.1.0",
   "private": true,
-  "description": "Serveur br.ia : API, temps réel, agents et base de données",
+  "description": "Serveur <br>.ia : API, temps réel, agents et base de données",
   "type": "module",
   "workspaces": [
     "packages/*"

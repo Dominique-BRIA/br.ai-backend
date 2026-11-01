@@ -41,6 +41,24 @@ describe("équipes", () => {
     expect(again.json).toMatchObject({ error: { code: "already_member" } });
   });
 
+  it("le chef retrouve la clé d'invitation en cours", async () => {
+    const chef = await t.signUp("chef-cle@exemple.org", "Chef");
+    const team = await createTeam(chef.token, "Équipe clé");
+    const current = () =>
+      t.call<{ invitation: { code: string } | null }>("GET", `/teams/${team.id}/invitations/current`, {
+        token: chef.token,
+      });
+    expect((await current()).json.invitation).toBeNull();
+
+    await invite(chef.token, team.id);
+    const latest = await invite(chef.token, team.id);
+    expect((await current()).json.invitation?.code).toBe(latest);
+
+    const membre = await t.signUp("membre-cle@exemple.org", "Membre", latest);
+    const forMember = await t.call("GET", `/teams/${team.id}/invitations/current`, { token: membre.token });
+    expect(forMember.status).toBe(403);
+  });
+
   it("seul le chef invite et retire des membres", async () => {
     const chef = await t.signUp("chef2@exemple.org", "Chef");
     const team = await createTeam(chef.token, "Équipe 2");

@@ -92,7 +92,7 @@ describe("e-mail de connexion", () => {
     await t.call("POST", "/auth/code", { body: { email: "html@exemple.org", invitationCode: invite } });
     const mail = t.mailer.sent.findLast((candidate) => candidate.to === "html@exemple.org");
     const code = t.mailer.lastCodeFor("html@exemple.org");
-    expect(mail?.subject).toBe(`Votre code de connexion br.ia : ${code}`);
+    expect(mail?.subject).toBe(`Votre code de connexion <br>.ia : ${code}`);
     expect(mail?.html).toContain(`>${code}</div>`);
     expect(mail?.html).toContain("font-size:44px");
   });

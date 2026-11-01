@@ -1,8 +1,8 @@
-# br.ia — Cahier des charges
+# \<br\>.ia — Cahier des charges
 
 _Version 1, 31 octobre 2026. Auteur : Dominique Bria._
 
-Ce document décrit ce que br.ia doit faire pour la **bêta privée** (étapes 1 et 2 du [document de vision](vision.md)) : tout sauf le paiement. Le contexte, le concept et le modèle économique sont dans le document de vision. Ici, on décrit ce qu'il faut construire.
+Ce document décrit ce que \<br\>.ia doit faire pour la **bêta privée** (étapes 1 et 2 du [document de vision](vision.md)) : tout sauf le paiement. Le contexte, le concept et le modèle économique sont dans le document de vision. Ici, on décrit ce qu'il faut construire.
 
 Chaque exigence porte un identifiant (`F-CPT-01`, etc.) et une priorité :
 
@@ -13,14 +13,14 @@ Chaque exigence porte un identifiant (`F-CPT-01`, etc.) et une priorité :
 
 ## 1. Acteurs
 
-| Acteur              | Description                                                                         |
-| ------------------- | ----------------------------------------------------------------------------------- |
-| **Visiteur**        | Consulte le site de présentation.                                                   |
-| **Membre**          | Personne inscrite, membre d'une ou plusieurs équipes.                               |
-| **Chef d'équipe**   | Membre qui dirige une équipe. Il y en a un seul par équipe.                         |
-| **Administrateur**  | Membre de l'équipe interne de br.ia. Il accède au tableau de bord d'administration. |
-| **Agent serveur**   | Agent IA qui écoute le chat, note, synthétise, arbitre et passe les commandes.      |
-| **Agent cuisinier** | Agent IA qui produit les livrables sur la machine d'un membre.                      |
+| Acteur              | Description                                                                             |
+| ------------------- | --------------------------------------------------------------------------------------- |
+| **Visiteur**        | Consulte le site de présentation.                                                       |
+| **Membre**          | Personne inscrite, membre d'une ou plusieurs équipes.                                   |
+| **Chef d'équipe**   | Membre qui dirige une équipe. Il y en a un seul par équipe.                             |
+| **Administrateur**  | Membre de l'équipe interne de \<br\>.ia. Il accède au tableau de bord d'administration. |
+| **Agent serveur**   | Agent IA qui écoute le chat, note, synthétise, arbitre et passe les commandes.          |
+| **Agent cuisinier** | Agent IA qui produit les livrables sur la machine d'un membre.                          |
 
 ## 2. Vocabulaire
 
@@ -55,15 +55,15 @@ Chaque exigence porte un identifiant (`F-CPT-01`, etc.) et une priorité :
 
 ### 3.2 Équipes et projets
 
-| ID       | Exigence                                                                                                                  | Priorité |
-| -------- | ------------------------------------------------------------------------------------------------------------------------- | -------- |
-| F-EQP-01 | Créer une équipe. Son créateur en devient le chef.                                                                        | Bêta     |
-| F-EQP-02 | Le chef invite des membres par lien ou par e-mail.                                                                        | Bêta     |
-| F-EQP-03 | Le chef retire un membre. br.ia lui rappelle alors de changer les secrets auxquels ce membre avait accès (voir F-SEC-08). | Bêta     |
-| F-EQP-04 | Le chef transmet son rôle à un autre membre.                                                                              | Bêta     |
-| F-EQP-05 | Un membre quitte une équipe. Le chef ne peut pas partir sans avoir transmis son rôle.                                     | Bêta     |
-| F-EQP-06 | Créer, renommer et archiver des projets dans une équipe.                                                                  | Bêta     |
-| F-EQP-07 | Le nombre de membres et de projets respecte les limites de la formule de l'équipe.                                        | Bêta     |
+| ID       | Exigence                                                                                                                      | Priorité |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------- | -------- |
+| F-EQP-01 | Créer une équipe. Son créateur en devient le chef.                                                                            | Bêta     |
+| F-EQP-02 | Le chef invite des membres par lien ou par e-mail.                                                                            | Bêta     |
+| F-EQP-03 | Le chef retire un membre. \<br\>.ia lui rappelle alors de changer les secrets auxquels ce membre avait accès (voir F-SEC-08). | Bêta     |
+| F-EQP-04 | Le chef transmet son rôle à un autre membre.                                                                                  | Bêta     |
+| F-EQP-05 | Un membre quitte une équipe. Le chef ne peut pas partir sans avoir transmis son rôle.                                         | Bêta     |
+| F-EQP-06 | Créer, renommer et archiver des projets dans une équipe.                                                                      | Bêta     |
+| F-EQP-07 | Le nombre de membres et de projets respecte les limites de la formule de l'équipe.                                            | Bêta     |
 
 ### 3.3 Le chat
 
@@ -127,7 +127,7 @@ Chaque exigence porte un identifiant (`F-CPT-01`, etc.) et une priorité :
 
 ### 3.6 L'agent cuisinier et ses outils
 
-Le cuisinier tourne sur les serveurs de br.ia (la boucle d'IA), mais **toutes ses actions s'exécutent sur la machine du membre**, à travers l'extension.
+Le cuisinier tourne sur les serveurs de \<br\>.ia (la boucle d'IA), mais **toutes ses actions s'exécutent sur la machine du membre**, à travers l'extension.
 
 | ID       | Exigence                                                                                                                                                                             | Priorité |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
@@ -183,7 +183,7 @@ Le cuisinier tourne sur les serveurs de br.ia (la boucle d'IA), mais **toutes se
 
 | ID       | Exigence                                                                                                                                                                           | Priorité |
 | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| F-GIT-01 | Une application GitHub br.ia, que l'équipe installe sur son dépôt.                                                                                                                 | Bêta     |
+| F-GIT-01 | Une application GitHub \<br\>.ia, que l'équipe installe sur son dépôt.                                                                                                             | Bêta     |
 | F-GIT-02 | Le chef branche le dépôt au projet depuis le chat.                                                                                                                                 | Bêta     |
 | F-GIT-03 | Chaque commande travaille sur sa propre branche : `bria/<numéro>-<titre-court>`.                                                                                                   | Bêta     |
 | F-GIT-04 | À la fin d'une tâche testée, le cuisinier pousse la branche, selon la préférence du membre (automatiquement, ou après sa validation).                                              | Bêta     |
@@ -214,7 +214,7 @@ Le cuisinier tourne sur les serveurs de br.ia (la boucle d'IA), mais **toutes se
 | F-SEC-05 | **L'IA ne voit jamais la valeur d'un secret.** Elle connaît seulement son nom.                                                                                     | Bêta      |
 | F-SEC-06 | L'extension remplace toute valeur secrète par `****` dans les résultats de commandes avant de les envoyer à l'IA.                                                  | Bêta      |
 | F-SEC-07 | Un journal enregistre qui a récupéré quel secret, et quand. Le chef le consulte.                                                                                   | Bêta      |
-| F-SEC-08 | Quand un membre quitte l'équipe, br.ia rappelle au chef de changer les secrets auxquels il avait accès.                                                            | Bêta      |
+| F-SEC-08 | Quand un membre quitte l'équipe, \<br\>.ia rappelle au chef de changer les secrets auxquels il avait accès.                                                        | Bêta      |
 | F-SEC-09 | Séparer les secrets de test et de production.                                                                                                                      | Plus tard |
 
 ### 3.11 Crédits et quotas
@@ -313,11 +313,11 @@ Sur le site, réservé aux administrateurs.
 
 ### 4.3 Confidentialité
 
-| ID        | Exigence                                                                                                                                         |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| NF-CNF-01 | Le serveur de br.ia stocke les conversations, la mémoire du projet et les métadonnées. Le code reste sur GitHub et sur les machines des membres. |
-| NF-CNF-02 | Les testeurs sont prévenus, à l'inscription, que certaines IA gratuites utilisent les échanges pour leur entraînement.                           |
-| NF-CNF-03 | Un membre peut exporter ses données.                                                                                                             |
+| ID        | Exigence                                                                                                                                             |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| NF-CNF-01 | Le serveur de \<br\>.ia stocke les conversations, la mémoire du projet et les métadonnées. Le code reste sur GitHub et sur les machines des membres. |
+| NF-CNF-02 | Les testeurs sont prévenus, à l'inscription, que certaines IA gratuites utilisent les échanges pour leur entraînement.                               |
+| NF-CNF-03 | Un membre peut exporter ses données.                                                                                                                 |
 
 ### 4.4 Compatibilité
 
@@ -342,7 +342,7 @@ Sur le site, réservé aux administrateurs.
 
 ```
 ┌──────────────────────────── Machine d'un membre ────────────────────────────┐
-│  VS Code + extension br.ia                                                  │
+│  VS Code + extension <br>.ia                                                  │
 │   ├─ panneau (webview React) : chat, mémoire, commandes                     │
 │   ├─ exécuteur d'outils : fichiers, commandes, Git, .env                    │
 │   └─ mémoire locale ~/.bria/                                                │

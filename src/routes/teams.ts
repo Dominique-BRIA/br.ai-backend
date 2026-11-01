@@ -1,6 +1,7 @@
 import {
   acceptInvitationBody,
   type CreateInvitationResponse,
+  type CurrentInvitationResponse,
   createProjectBody,
   createTeamBody,
   type Project,
@@ -9,7 +10,7 @@ import {
   updateProjectBody,
   type Workspace,
 } from "@br-ia/protocol";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { newInvitationCode, normalizeInvitationCode } from "../auth/secrets.ts";
@@ -52,6 +53,28 @@ export function teamRoutes(app: FastifyInstance, ctx: AppContext): void {
     const code = newInvitationCode("EQP");
     await ctx.db.insert(teamInvitations).values({ teamId, code, createdBy: request.userId, expiresAt });
     return { code, expiresAt: expiresAt.toISOString() };
+  });
+
+  app.get("/teams/:teamId/invitations/current", async (request): Promise<CurrentInvitationResponse> => {
+    const { teamId } = parse(teamParams, request.params);
+    await requireChef(ctx, request.userId, teamId);
+    const [invitation] = await ctx.db
+      .select({ code: teamInvitations.code, expiresAt: teamInvitations.expiresAt })
+      .from(teamInvitations)
+      .where(
+        and(
+          eq(teamInvitations.teamId, teamId),
+          isNull(teamInvitations.revokedAt),
+          gt(teamInvitations.expiresAt, new Date()),
+        ),
+      )
+      .orderBy(desc(teamInvitations.createdAt))
+      .limit(1);
+    return {
+      invitation: invitation
+        ? { code: invitation.code, expiresAt: invitation.expiresAt.toISOString() }
+        : null,
+    };
   });
 
   app.post("/invitations/accept", async (request): Promise<{ team: Team }> => {

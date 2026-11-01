@@ -1,8 +1,8 @@
-# br.ia — Charte des interfaces
+# \<br\>.ia — Charte des interfaces
 
 _Version 1, 31 octobre 2026._
 
-Cette charte fixe la façon de concevoir les trois interfaces de br.ia : l'**extension VS Code** (l'interface client), le **tableau de bord d'administration** et le **site de présentation**.
+Cette charte fixe la façon de concevoir les trois interfaces de \<br\>.ia : l'**extension VS Code** (l'interface client), le **tableau de bord d'administration** et le **site de présentation**.
 
 Deux règles de départ, posées par Dominique :
 
@@ -74,7 +74,7 @@ Avant de valider un écran :
 
 ## 2. L'extension VS Code (interface client)
 
-L'objectif : que br.ia ait l'air **d'une partie de VS Code**, pas d'un site web collé dans l'éditeur.
+L'objectif : que \<br\>.ia ait l'air **d'une partie de VS Code**, pas d'un site web collé dans l'éditeur.
 
 ### 2.1 Natif d'abord
 
@@ -91,7 +91,7 @@ Les recommandations officielles de VS Code demandent de n'utiliser une webview q
 | Prise en main                                       | Guide de démarrage natif (_Walkthrough_), pas une page d'accueil sur mesure       |
 | Connexion, mode de permission, cuisinier au travail | Un seul élément dans la barre d'état                                              |
 
-**Barre latérale :** un seul conteneur br.ia, et pas plus de trois à cinq vues dedans.
+**Barre latérale :** un seul conteneur \<br\>.ia, et pas plus de trois à cinq vues dedans.
 
 ### 2.2 Thème et polices
 
@@ -99,7 +99,7 @@ Les recommandations officielles de VS Code demandent de n'utiliser une webview q
 - La webview s'adapte aux classes `vscode-light`, `vscode-dark` et `vscode-high-contrast`. **Elle est testée en contraste élevé.**
 - Le texte utilise la police de l'interface de VS Code ; le code utilise la police de l'éditeur (`--vscode-editor-font-family`, `--vscode-editor-font-size`).
 - Les icônes viennent des Codicons, qui sont celles de VS Code.
-- La couleur de marque de br.ia n'apparaît **pas** dans l'extension : on respecte le thème de l'utilisateur.
+- La couleur de marque de \<br\>.ia n'apparaît **pas** dans l'extension : on respecte le thème de l'utilisateur.
 
 ### 2.3 Le chat
 
@@ -122,11 +122,11 @@ Les règles officielles de VS Code :
 - pour une progression peu importante, utiliser la barre d'état plutôt qu'une notification ;
 - les fenêtres modales sont réservées aux actions qui exigent une réponse immédiate : chez nous, la confirmation d'une commande dangereuse.
 
-**Ce qui mérite une notification dans br.ia :** une mention, une commande terminée ou échouée, une nouvelle version à récupérer, une maintenance annoncée, un quota à 80 %. Rien d'autre.
+**Ce qui mérite une notification dans \<br\>.ia :** une mention, une commande terminée ou échouée, une nouvelle version à récupérer, une maintenance annoncée, un quota à 80 %. Rien d'autre.
 
 ### 2.5 Barre d'état
 
-Un seul élément br.ia, à gauche : un texte court (`br.ia : connecté`, `br.ia : cuisinier au travail`) avec une icône seulement si elle est claire. Pas de couleur personnalisée. Un clic ouvre le panneau.
+Un seul élément \<br\>.ia, à gauche : un texte court (`<br>.ia : connecté`, `<br>.ia : cuisinier au travail`) avec une icône seulement si elle est claire. Pas de couleur personnalisée. Un clic ouvre le panneau.
 
 ### 2.6 Accessibilité
 
@@ -171,7 +171,7 @@ Next.js, avec des composants accessibles et non stylés à la base (par exemple 
 
 ## 4. Le site de présentation
 
-L'objectif : comprendre en quelques secondes **ce que fait br.ia**, le voir fonctionner, et demander une invitation.
+L'objectif : comprendre en quelques secondes **ce que fait \<br\>.ia**, le voir fonctionner, et demander une invitation.
 
 ### 4.1 Contenu
 
