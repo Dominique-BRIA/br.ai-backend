@@ -4,6 +4,12 @@ const schema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
   HOST: z.string().default("127.0.0.1"),
   PORT: z.coerce.number().int().positive().default(4000),
+  /**
+   * Base PostgreSQL de production (Neon) : l'adresse avec pooler pour les requêtes, la connexion
+   * directe pour les migrations. Utilisées seulement quand NODE_ENV vaut « production ».
+   */
+  DATABASE_URL: z.string().trim().optional(),
+  DATABASE_DIRECT: z.string().trim().optional(),
   /** Dossier de la base PGlite locale, utilisée en développement. */
   PGLITE_DIR: z.string().default(".data/pglite"),
   /** Jeton des routes d'administration (`x-admin-token`). Sans lui, ces routes sont fermées. */
@@ -16,11 +22,13 @@ const schema = z.object({
   GROQ_API_KEY: z.string().optional(),
   MISTRAL_API_KEY: z.string().optional(),
   OPENROUTER_API_KEY: z.string().optional(),
+  /** Z.ai : modèles GLM Flash gratuits, en dernier secours (les données passent par la Chine). */
+  ZAI_API_KEY: z.string().optional(),
   /** Modèles de l'agent serveur, « fournisseur:modèle » séparés par des virgules, dans l'ordre d'essai. */
   AI_SERVEUR_CHAIN: z
     .string()
     .default(
-      "gemini:gemini-3.5-flash-lite,gemini:gemini-3.1-flash-lite,groq:openai/gpt-oss-120b,gemini:gemini-flash-lite-latest",
+      "gemini:gemini-3.5-flash-lite,gemini:gemini-3.1-flash-lite,groq:openai/gpt-oss-120b,gemini:gemini-flash-lite-latest,zai:glm-4.5-flash",
     ),
   /**
    * Modèles du cuisinier (ils doivent savoir appeler des outils), dans l'ordre d'essai : Gemini 3.6 Flash
@@ -30,7 +38,7 @@ const schema = z.object({
   AI_CUISINIER_CHAIN: z
     .string()
     .default(
-      "gemini:gemini-3.6-flash,mistral:codestral-latest,groq:openai/gpt-oss-120b,gemini:gemini-3.5-flash",
+      "gemini:gemini-3.6-flash,mistral:codestral-latest,groq:openai/gpt-oss-120b,gemini:gemini-3.5-flash,zai:glm-4.7-flash,zai:glm-4.5-flash",
     ),
   /** Clé maîtresse du coffre de secrets : 32 octets en base64. Sans elle, le coffre est fermé. */
   SECRETS_KEY: z.string().optional(),

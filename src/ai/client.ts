@@ -84,6 +84,7 @@ export const PROVIDER_URLS: Record<string, string> = {
   groq: "https://api.groq.com/openai/v1",
   mistral: "https://api.mistral.ai/v1",
   openrouter: "https://openrouter.ai/api/v1",
+  zai: "https://api.z.ai/api/paas/v4",
 };
 
 /** Délai minimal entre deux appels à un même fournisseur (offre gratuite de Mistral : 1 requête par seconde). */
