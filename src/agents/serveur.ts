@@ -4,6 +4,7 @@ import { z } from "zod";
 import { type Ai, AiUnavailableError, type ChatMessage, type ModelChoice } from "../ai/client.ts";
 import type { AppContext, CatchUpRequest } from "../context.ts";
 import { messages, teamMembers, users } from "../db/schema.ts";
+import { quotaReached } from "../services/credits.ts";
 import { addMemory, announceMemoryChange, listMemory, setMemoryStatus } from "../services/memory.ts";
 import { postAgentMessage, toMessages } from "../services/messages.ts";
 import type { Kitchen } from "./cuisinier.ts";
@@ -156,6 +157,7 @@ export class ServeurAgent {
       const completion = await this.ai.complete(this.chain, {
         purpose: "absence",
         teamId: request.teamId,
+        userId: request.userId,
         projectId: request.projectId,
         messages: [
           { role: "system", content: CATCH_UP_PROMPT },
@@ -197,6 +199,7 @@ export class ServeurAgent {
       const completion = await this.ai.complete(this.chain, {
         purpose: "serveur",
         teamId,
+        userId: author.userId,
         projectId: message.projectId,
         json: true,
         messages: this.#prompt(message, members, history, memory, refs),
@@ -269,7 +272,15 @@ export class ServeurAgent {
     }
 
     // La commande part en cuisine après la réponse du serveur, pour que le fil se lise dans l'ordre.
-    if (result.order && this.kitchen) {
+    if (result.order && this.kitchen && (await quotaReached(this.ctx, teamId))) {
+      await postAgentMessage(this.ctx, {
+        projectId: message.projectId,
+        teamId,
+        kind: "serveur",
+        body: "Je ne peux pas passer cette commande au cuisinier : l'équipe a utilisé tous ses crédits du mois. Le chef peut saisir un code ou changer de formule.",
+        replyToId: message.id,
+      });
+    } else if (result.order && this.kitchen) {
       await this.kitchen.createOrder({
         projectId: message.projectId,
         teamId,

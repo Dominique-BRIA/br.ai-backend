@@ -13,6 +13,7 @@ import { betaInvites, loginCodes, teamInvitations, teamMembers, users } from "..
 import { HttpError, parse } from "../http/errors.ts";
 import { loginCodeMail } from "../mail/templates.ts";
 import { memberIds } from "../services/access.ts";
+import { requireWithinPlan } from "../services/credits.ts";
 
 export const CODE_TTL_MS = 10 * 60_000;
 export const MAX_ATTEMPTS = 5;
@@ -40,6 +41,8 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext): void {
       invitation = await findInvitation(ctx, invitationCode);
       if (!invitation)
         throw new HttpError(403, "invitation_invalid", "Ce code d'invitation n'est pas valable.");
+      if (invitation.kind === "team" && invitation.teamId)
+        await requireWithinPlan(ctx, invitation.teamId, "members");
     }
 
     const [recent] = await ctx.db

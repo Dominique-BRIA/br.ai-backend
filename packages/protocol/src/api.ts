@@ -39,6 +39,7 @@ export const apiErrorCode = z.enum([
   "vault_disabled",
   "secret_exists",
   "email_taken",
+  "plan_limit",
 ]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 
@@ -283,6 +284,31 @@ export const localMemory = z.object({
 export type LocalMemory = z.infer<typeof localMemory>;
 export const saveLocalMemoryBody = z.object({ content: z.string().max(20_000) });
 export type SaveLocalMemoryBody = z.input<typeof saveLocalMemoryBody>;
+
+// Formules et crédits
+
+export const planSummary = z.object({
+  id: z.string(),
+  name: z.string(),
+  maxMembers: z.number().int(),
+  maxProjects: z.number().int(),
+  monthlyCredits: z.number().int(),
+});
+export type PlanSummary = z.infer<typeof planSummary>;
+
+/** GET /teams/:teamId/usage — formule et consommation du mois (détail par membre pour le chef). */
+export const teamUsage = z.object({
+  plan: planSummary,
+  /** Fin de la formule ; null si elle n'expire pas. */
+  planEndsAt: z.iso.datetime().nullable(),
+  month: z.string(),
+  used: z.number(),
+  /** Crédits ajoutés ce mois-ci (code, geste de l'administrateur). */
+  bonus: z.number(),
+  quota: z.number(),
+  byMember: z.array(z.object({ userId: z.uuid(), displayName: z.string(), credits: z.number() })),
+});
+export type TeamUsage = z.infer<typeof teamUsage>;
 
 // Retours des testeurs
 

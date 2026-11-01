@@ -319,6 +319,7 @@ export class Kitchen implements KitchenHooks {
         const reply = await this.#ai.toolTurn(this.#chain, {
           purpose: "cuisinier",
           teamId,
+          userId: order.requestedByUserId ?? undefined,
           projectId: order.projectId,
           messages,
           tools: TOOLS,

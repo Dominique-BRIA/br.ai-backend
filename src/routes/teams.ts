@@ -6,6 +6,7 @@ import {
   createTeamBody,
   type Project,
   type Team,
+  type TeamUsage,
   transferChefBody,
   updateProjectBody,
   type Workspace,
@@ -15,9 +16,10 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { newInvitationCode, normalizeInvitationCode } from "../auth/secrets.ts";
 import type { AppContext } from "../context.ts";
-import { projects, teamInvitations, teamMembers, teams } from "../db/schema.ts";
+import { projects, teamInvitations, teamMembers, teams, users } from "../db/schema.ts";
 import { forbidden, HttpError, notFound, parse } from "../http/errors.ts";
 import { memberIds, requireChef, requireMember, roleIn } from "../services/access.ts";
+import { requireWithinPlan, teamUsage } from "../services/credits.ts";
 import { revokeSecretsOnDeparture } from "../services/secrets.ts";
 import { buildTeam, buildWorkspace } from "../services/workspace.ts";
 
@@ -78,6 +80,44 @@ export function teamRoutes(app: FastifyInstance, ctx: AppContext): void {
     };
   });
 
+  /** Formule et consommation du mois ; le détail par membre est réservé au chef. */
+  app.get("/teams/:teamId/usage", async (request): Promise<TeamUsage> => {
+    const { teamId } = parse(teamParams, request.params);
+    const role = await requireMember(ctx, request.userId, teamId);
+    const usage = await teamUsage(ctx, teamId);
+    const names =
+      role === "chef"
+        ? await ctx.db
+            .select({ userId: users.id, displayName: users.displayName })
+            .from(teamMembers)
+            .innerJoin(users, eq(users.id, teamMembers.userId))
+            .where(eq(teamMembers.teamId, teamId))
+        : [];
+    return {
+      plan: {
+        id: usage.plan.id,
+        name: usage.plan.name,
+        maxMembers: usage.plan.maxMembers,
+        maxProjects: usage.plan.maxProjects,
+        monthlyCredits: usage.plan.monthlyCredits,
+      },
+      planEndsAt: usage.endsAt?.toISOString() ?? null,
+      month: usage.month,
+      used: usage.used,
+      bonus: usage.bonus,
+      quota: usage.quota,
+      byMember:
+        role === "chef"
+          ? names
+              .map((member) => ({
+                ...member,
+                credits: usage.byMember.find((row) => row.userId === member.userId)?.credits ?? 0,
+              }))
+              .sort((a, b) => b.credits - a.credits)
+          : [],
+    };
+  });
+
   app.post("/invitations/accept", async (request): Promise<{ team: Team }> => {
     const code = normalizeInvitationCode(parse(acceptInvitationBody, request.body).code);
     const [invitation] = await ctx.db
@@ -95,6 +135,7 @@ export function teamRoutes(app: FastifyInstance, ctx: AppContext): void {
     if (await roleIn(ctx, request.userId, invitation.teamId)) {
       throw new HttpError(409, "already_member", "Vous faites déjà partie de cette équipe.");
     }
+    await requireWithinPlan(ctx, invitation.teamId, "members");
     await ctx.db.insert(teamMembers).values({ teamId: invitation.teamId, userId: request.userId });
     await notifyTeam(invitation.teamId);
     return { team: await buildTeam(ctx, request.userId, invitation.teamId) };
@@ -155,6 +196,7 @@ export function teamRoutes(app: FastifyInstance, ctx: AppContext): void {
     const { teamId } = parse(teamParams, request.params);
     const { name } = parse(createProjectBody, request.body);
     await requireMember(ctx, request.userId, teamId);
+    await requireWithinPlan(ctx, teamId, "projects");
     const [project] = await ctx.db
       .insert(projects)
       .values({ teamId, name })

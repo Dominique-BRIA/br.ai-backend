@@ -1,5 +1,6 @@
 import type { AppContext } from "../context.ts";
 import { aiCalls } from "../db/schema.ts";
+import { afterAiUsage, creditRates, creditsFor } from "../services/credits.ts";
 
 /**
  * Couche commune d'IA. Tous les fournisseurs utilisés (Gemini, Groq, Mistral,
@@ -41,6 +42,8 @@ interface Accounting {
   purpose: string;
   teamId?: string;
   projectId?: string;
+  /** Membre pour qui l'appel est fait (auteur du message, demandeur de la commande). */
+  userId?: string;
 }
 
 export interface CompletionRequest extends Accounting {
@@ -96,11 +99,11 @@ interface RawMessage {
 }
 
 export class AiClient implements Ai {
-  readonly #ctx: Pick<AppContext, "db" | "log">;
+  readonly #ctx: AppContext;
   readonly #fetch: typeof fetch;
   readonly #nextSlot = new Map<string, number>();
 
-  constructor(ctx: Pick<AppContext, "db" | "log">, fetchImpl: typeof fetch = fetch) {
+  constructor(ctx: AppContext, fetchImpl: typeof fetch = fetch) {
     this.#ctx = ctx;
     this.#fetch = fetchImpl;
   }
@@ -212,21 +215,26 @@ export class AiClient implements Ai {
     outputTokens: number,
     error: string | null,
   ): Promise<void> {
-    await this.#ctx.db
-      .insert(aiCalls)
-      .values({
+    try {
+      const rates = await creditRates(this.#ctx);
+      await this.#ctx.db.insert(aiCalls).values({
         purpose: request.purpose,
         teamId: request.teamId,
         projectId: request.projectId,
+        userId: request.userId,
         provider: choice.provider.name,
         model: choice.model,
         inputTokens,
         outputTokens,
+        credits: creditsFor(rates, choice.provider.name, choice.model, inputTokens, outputTokens),
         durationMs: Date.now() - started,
         ok: error === null,
         error: error?.slice(0, 500),
-      })
-      .catch((cause: unknown) => this.#ctx.log.error({ err: cause }, "appel IA non journalisé"));
+      });
+      if (request.teamId && error === null) await afterAiUsage(this.#ctx, request.teamId, request.projectId);
+    } catch (cause) {
+      this.#ctx.log.error({ err: cause }, "appel IA non journalisé");
+    }
   }
 }
 

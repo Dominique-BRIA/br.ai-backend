@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   boolean,
+  doublePrecision,
   index,
   integer,
   jsonb,
@@ -89,6 +90,15 @@ export const loginCodes = pgTable(
 export const teams = pgTable("teams", {
   id: uuid().primaryKey().defaultRandom(),
   name: text().notNull(),
+  /** Formule de l'équipe ; à sa date de fin, l'équipe revient à l'essai. */
+  planId: text()
+    .notNull()
+    .default("essai")
+    .references((): AnyPgColumn => plans.id),
+  planEndsAt: timestamp({ withTimezone: true }),
+  /** Mois (« 2026-11 ») où le chef a été prévenu à 80 % puis à 100 % du quota, pour ne le dire qu'une fois. */
+  quotaWarnedMonth: text(),
+  quotaExceededMonth: text(),
   createdAt: createdAt(),
 });
 
@@ -219,6 +229,10 @@ export const aiCalls = pgTable(
     durationMs: integer().notNull(),
     ok: boolean().notNull(),
     error: text(),
+    /** Membre pour qui l'appel a été fait, pour la consommation par membre. */
+    userId: uuid().references(() => users.id, { onDelete: "set null" }),
+    /** Crédits comptés pour cet appel, selon le barème du moment. */
+    credits: doublePrecision().notNull().default(0),
     createdAt: createdAt(),
   },
   (t) => [index().on(t.teamId, t.createdAt)],
@@ -336,4 +350,38 @@ export const feedback = pgTable(
     createdAt: createdAt(),
   },
   (t) => [index().on(t.status, t.createdAt)],
+);
+
+/** Formules : limites de membres et de projets, quota mensuel de crédits. */
+export const plans = pgTable("plans", {
+  id: text().primaryKey(),
+  name: text().notNull(),
+  maxMembers: integer().notNull(),
+  maxProjects: integer().notNull(),
+  monthlyCredits: integer().notNull(),
+  sortOrder: integer().notNull().default(0),
+});
+
+/** Réglages de la plateforme modifiables depuis le tableau de bord (barème des crédits, maintenance…). */
+export const platformSettings = pgTable("platform_settings", {
+  key: text().primaryKey(),
+  value: jsonb().notNull(),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Crédits ajoutés au quota d'une équipe pour un mois (code promo, geste de l'administrateur). */
+export const creditGrants = pgTable(
+  "credit_grants",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    teamId: uuid()
+      .notNull()
+      .references(() => teams.id, { onDelete: "cascade" }),
+    credits: integer().notNull(),
+    /** Mois concerné, « 2026-11 ». */
+    month: text().notNull(),
+    source: text().notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.teamId, t.month)],
 );

@@ -57,6 +57,13 @@
       "when": 1793529111081,
       "tag": "0007_retours",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793529397751,
+      "tag": "0008_credits_et_formules",
+      "breakpoints": true
     }
   ]
 }

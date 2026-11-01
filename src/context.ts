@@ -12,6 +12,7 @@ export interface CatchUpRequest {
   projectId: string;
   teamId: string;
   /** Le membre qui revient : le résumé lui est adressé. */
+  userId: string;
   userName: string;
   /** Les messages des autres depuis son départ, du plus ancien au plus récent. */
   messages: Message[];

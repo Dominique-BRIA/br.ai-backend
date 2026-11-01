@@ -78,6 +78,7 @@ export function messageRoutes(app: FastifyInstance, ctx: AppContext): void {
     const summary = await ctx.summarize({
       projectId,
       teamId: project.teamId,
+      userId: request.userId,
       userName: me?.displayName ?? "",
       messages: await toMessages(ctx, rows),
     });
