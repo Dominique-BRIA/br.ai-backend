@@ -40,6 +40,11 @@ export const apiErrorCode = z.enum([
   "secret_exists",
   "email_taken",
   "plan_limit",
+  "promo_invalid",
+  "promo_expired",
+  "promo_exhausted",
+  "promo_already_used",
+  "promo_not_eligible",
 ]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 
@@ -309,6 +314,77 @@ export const teamUsage = z.object({
   byMember: z.array(z.object({ userId: z.uuid(), displayName: z.string(), credits: z.number() })),
 });
 export type TeamUsage = z.infer<typeof teamUsage>;
+
+// Codes promotionnels
+
+/** POST /teams/:teamId/promo — le chef saisit un code. */
+export const redeemPromoBody = z.object({ code: z.string().trim().min(3).max(64) });
+export type RedeemPromoBody = z.input<typeof redeemPromoBody>;
+export const redeemPromoResponse = z.object({
+  /** Ce que le code a changé, en une phrase. */
+  message: z.string(),
+});
+export type RedeemPromoResponse = z.infer<typeof redeemPromoResponse>;
+
+export const promoKind = z.enum(["plan", "trial", "credits", "percent", "amount", "beta"]);
+export type PromoKind = z.infer<typeof promoKind>;
+
+/** POST /admin/promo-codes — un code, ou un lot de codes uniques (count > 1). */
+export const createPromoBody = z.object({
+  kind: promoKind,
+  /** Code choisi (public) ; absent : généré. */
+  code: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z0-9-]{3,40}$/)
+    .optional(),
+  /** Préfixe des codes générés. */
+  prefix: z
+    .string()
+    .trim()
+    .toUpperCase()
+    .regex(/^[A-Z0-9]{2,12}$/)
+    .default("BRIA"),
+  count: z.number().int().min(1).max(500).default(1),
+  planId: z.string().optional(),
+  durationMonths: z.number().int().min(1).max(36).optional(),
+  forever: z.boolean().default(false),
+  credits: z.number().int().min(1).max(10_000_000).optional(),
+  trialDays: z.number().int().min(1).max(365).optional(),
+  percent: z.number().int().min(1).max(100).optional(),
+  amountCents: z.number().int().min(1).optional(),
+  expiresAt: z.iso.datetime().optional(),
+  maxUses: z.number().int().min(1).optional(),
+  onePerAccount: z.boolean().default(true),
+  newCustomersOnly: z.boolean().default(false),
+  requiredPlanId: z.string().optional(),
+  sort: z.enum(["public", "unique", "referral"]).default("public"),
+  note: z.string().max(200).optional(),
+});
+export type CreatePromoBody = z.input<typeof createPromoBody>;
+
+export const promoCode = z.object({
+  id: z.string(),
+  code: z.string(),
+  kind: promoKind,
+  planId: z.string().nullable(),
+  durationMonths: z.number().nullable(),
+  forever: z.boolean(),
+  credits: z.number().nullable(),
+  trialDays: z.number().nullable(),
+  percent: z.number().nullable(),
+  amountCents: z.number().nullable(),
+  expiresAt: z.iso.datetime().nullable(),
+  maxUses: z.number().nullable(),
+  usesCount: z.number(),
+  sort: z.string(),
+  batch: z.string().nullable(),
+  note: z.string().nullable(),
+  disabled: z.boolean(),
+  createdAt: z.iso.datetime(),
+});
+export type PromoCode = z.infer<typeof promoCode>;
 
 // Retours des testeurs
 

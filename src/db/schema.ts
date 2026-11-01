@@ -385,3 +385,53 @@ export const creditGrants = pgTable(
   },
   (t) => [index().on(t.teamId, t.month)],
 );
+
+/**
+ * Codes promotionnels. Sortes : formule offerte, essai d'une formule pendant quelques jours,
+ * crédits en bonus, réduction en pourcentage ou d'un montant fixe (appliquée une fois le
+ * paiement intégré). Les invitations à la bêta restent dans beta_invites.
+ */
+export const promoCodes = pgTable("promo_codes", {
+  id: uuid().primaryKey().defaultRandom(),
+  code: text().notNull().unique(),
+  kind: text().$type<"plan" | "trial" | "credits" | "percent" | "amount">().notNull(),
+  /** Formule offerte (plan) ou essayée (trial). */
+  planId: text().references(() => plans.id),
+  /** Durée de l'effet en mois (formule, crédits chaque mois) ; vide : une seule fois. */
+  durationMonths: integer(),
+  /** Effet sans fin, réservé aux comptes de l'équipe interne. */
+  forever: boolean().notNull().default(false),
+  credits: integer(),
+  trialDays: integer(),
+  percent: integer(),
+  amountCents: integer(),
+  expiresAt: timestamp({ withTimezone: true }),
+  maxUses: integer(),
+  usesCount: integer().notNull().default(0),
+  onePerAccount: boolean().notNull().default(true),
+  /** Seulement pour une équipe encore à l'essai et qui n'a jamais utilisé de code. */
+  newCustomersOnly: boolean().notNull().default(false),
+  /** Seulement pour une équipe qui a cette formule. */
+  requiredPlanId: text().references(() => plans.id),
+  /** Public, unique (généré en lot) ou parrainage. */
+  sort: text().$type<"public" | "unique" | "referral">().notNull().default("public"),
+  batch: text(),
+  note: text(),
+  disabledAt: timestamp({ withTimezone: true }),
+  createdAt: createdAt(),
+});
+
+/** Utilisations des codes : par qui, pour quelle équipe, et quand. */
+export const promoRedemptions = pgTable(
+  "promo_redemptions",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    codeId: uuid()
+      .notNull()
+      .references(() => promoCodes.id, { onDelete: "cascade" }),
+    userId: uuid().references(() => users.id, { onDelete: "set null" }),
+    teamId: uuid().references(() => teams.id, { onDelete: "set null" }),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.codeId), index().on(t.teamId)],
+);

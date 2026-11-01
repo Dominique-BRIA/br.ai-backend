@@ -5,6 +5,8 @@ import {
   createProjectBody,
   createTeamBody,
   type Project,
+  type RedeemPromoResponse,
+  redeemPromoBody,
   type Team,
   type TeamUsage,
   transferChefBody,
@@ -20,6 +22,7 @@ import { projects, teamInvitations, teamMembers, teams, users } from "../db/sche
 import { forbidden, HttpError, notFound, parse } from "../http/errors.ts";
 import { memberIds, requireChef, requireMember, roleIn } from "../services/access.ts";
 import { requireWithinPlan, teamUsage } from "../services/credits.ts";
+import { redeemPromo } from "../services/promo.ts";
 import { revokeSecretsOnDeparture } from "../services/secrets.ts";
 import { buildTeam, buildWorkspace } from "../services/workspace.ts";
 
@@ -116,6 +119,14 @@ export function teamRoutes(app: FastifyInstance, ctx: AppContext): void {
               .sort((a, b) => b.credits - a.credits)
           : [],
     };
+  });
+
+  /** Le chef saisit un code promotionnel pour son équipe. */
+  app.post("/teams/:teamId/promo", async (request): Promise<RedeemPromoResponse> => {
+    const { teamId } = parse(teamParams, request.params);
+    const { code } = parse(redeemPromoBody, request.body);
+    await requireChef(ctx, request.userId, teamId);
+    return { message: await redeemPromo(ctx, teamId, request.userId, code) };
   });
 
   app.post("/invitations/accept", async (request): Promise<{ team: Team }> => {
