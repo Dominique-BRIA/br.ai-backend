@@ -100,3 +100,44 @@ export function loginCodeMail(
 </html>`;
   return { to, subject: t.subject(code), text, html };
 }
+
+/** Réponse à une demande d'accès laissée sur le site : le code d'invitation à la bêta. */
+export function betaInviteMail(to: string, code: string, expiresAt: Date): Mail {
+  const until = expiresAt.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+  const title = "Votre invitation à la bêta";
+  const intro = (brand: string) =>
+    `Vous avez demandé à essayer ${brand} : votre place est prête. Voici votre code d'invitation.`;
+  const steps = (brand: string) =>
+    `Installez l'extension ${brand} dans VS Code, ouvrez son panneau, puis saisissez votre adresse e-mail et ce code.`;
+  const validity = `Il est valable jusqu'au ${until}, pour un seul compte.`;
+  const footer = (brand: string) => `${brand} · redonner un sens au travail d'équipe`;
+  const text = `${title} : ${code}\n\n${intro(BRAND)}\n\n${steps(BRAND)} ${validity}\n\n${footer(BRAND)}`;
+  const html = `<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>${title}</title>
+</head>
+<body style="margin:0;padding:0;background:${COLORS.page};">
+<div style="display:none;max-height:0;overflow:hidden;">Votre code d'invitation : ${code}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:${COLORS.page};">
+<tr><td align="center" style="padding:40px 16px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;background:${COLORS.card};border:1px solid ${COLORS.border};border-radius:6px;">
+    <tr><td style="padding:28px 36px 0;font-family:'IBM Plex Mono',Consolas,'Courier New',monospace;font-size:20px;font-weight:600;color:${COLORS.brand};">${BRAND_HTML}</td></tr>
+    <tr><td style="padding:20px 36px 0;font-family:'IBM Plex Sans','Segoe UI',Arial,sans-serif;font-size:26px;line-height:1.3;font-weight:600;color:${COLORS.text};">${title}</td></tr>
+    <tr><td style="padding:12px 36px 0;font-family:'IBM Plex Sans','Segoe UI',Arial,sans-serif;font-size:18px;line-height:1.5;color:${COLORS.text};">${intro(BRAND_HTML)}</td></tr>
+    <tr><td style="padding:24px 36px;">
+      <div style="padding:20px 0;background:${COLORS.codeBackground};border:1px solid ${COLORS.border};border-radius:6px;text-align:center;font-family:'IBM Plex Mono',Consolas,'Courier New',monospace;font-size:30px;line-height:1;font-weight:700;letter-spacing:4px;color:${COLORS.brand};">${code}</div>
+    </td></tr>
+    <tr><td style="padding:0 36px;font-family:'IBM Plex Sans','Segoe UI',Arial,sans-serif;font-size:17px;line-height:1.5;color:${COLORS.text};">${steps(BRAND_HTML)}</td></tr>
+    <tr><td style="padding:16px 36px 32px;font-family:'IBM Plex Sans','Segoe UI',Arial,sans-serif;font-size:15px;line-height:1.5;color:${COLORS.muted};">${validity}</td></tr>
+  </table>
+  <p style="margin:20px 0 0;font-family:'IBM Plex Sans','Segoe UI',Arial,sans-serif;font-size:13px;color:${COLORS.muted};">${footer(BRAND_HTML)}</p>
+</td></tr>
+</table>
+</body>
+</html>`;
+  return { to, subject: `Votre invitation à la bêta de ${BRAND}`, text, html };
+}

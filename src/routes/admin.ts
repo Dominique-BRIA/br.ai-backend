@@ -10,6 +10,7 @@ import { betaInvites, promoCodes } from "../db/schema.ts";
 import { HttpError, parse } from "../http/errors.ts";
 import { createPromoCodes, toPromoCode } from "../services/promo.ts";
 import { adminAccountRoutes, findAdminSession } from "./adminAuth.ts";
+import { betaRequestAdminRoutes } from "./beta.ts";
 import { dashboardRoutes } from "./dashboard.ts";
 
 const createBetaInviteBody = z.object({
@@ -40,6 +41,7 @@ export function adminRoutes(
   });
 
   adminAccountRoutes(app, ctx);
+  betaRequestAdminRoutes(app, ctx);
 
   dashboardRoutes(app, ctx, chains);
 

@@ -85,6 +85,13 @@
       "when": 1793534290495,
       "tag": "0011_comptes_administrateurs",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1793536967510,
+      "tag": "0012_demandes_beta",
+      "breakpoints": true
     }
   ]
 }

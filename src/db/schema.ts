@@ -67,6 +67,16 @@ export const betaInvites = pgTable("beta_invites", {
   createdAt: createdAt(),
 });
 
+/** Demandes d'accès à la bêta, laissées sur la page d'accueil du site. */
+export const betaRequests = pgTable("beta_requests", {
+  id: uuid().primaryKey().defaultRandom(),
+  email: text().notNull().unique(),
+  /** Code d'invitation envoyé en réponse, une fois la demande acceptée. */
+  inviteCode: text(),
+  invitedAt: timestamp({ withTimezone: true }),
+  createdAt: createdAt(),
+});
+
 /** Codes de connexion envoyés par e-mail. */
 export const loginCodes = pgTable(
   "login_codes",

@@ -14,6 +14,7 @@ import { adminRoutes } from "./routes/admin.ts";
 import { adminAuthRoutes } from "./routes/adminAuth.ts";
 import { attachmentRoutes } from "./routes/attachments.ts";
 import { authRoutes } from "./routes/auth.ts";
+import { betaRequestRoutes } from "./routes/beta.ts";
 import { meRoutes } from "./routes/me.ts";
 import { memoryRoutes } from "./routes/memory.ts";
 import { messageRoutes } from "./routes/messages.ts";
@@ -98,6 +99,7 @@ export async function buildApp(options: AppOptions) {
 
   await app.register(async (scope) => authRoutes(scope, ctx));
   await app.register(async (scope) => adminAuthRoutes(scope, ctx));
+  await app.register(async (scope) => betaRequestRoutes(scope, ctx));
   await app.register(async (scope) => {
     requireAuth(scope, ctx);
     teamRoutes(scope, ctx);

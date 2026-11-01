@@ -47,6 +47,8 @@ export const apiErrorCode = z.enum([
   "promo_not_eligible",
   "account_suspended",
   "maintenance",
+  "already_invited",
+  "mail_failed",
 ]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 
