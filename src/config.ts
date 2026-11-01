@@ -10,7 +10,7 @@ const schema = z.object({
   ADMIN_TOKEN: z.string().min(16).optional(),
   /** Clé Resend. Sans elle, les e-mails sont seulement écrits dans le journal. */
   RESEND_API_KEY: z.string().optional(),
-  MAIL_FROM: z.string().default(`"<br>.ia" <onboarding@resend.dev>`),
+  MAIL_FROM: z.string().default("‹br›.ia <onboarding@resend.dev>"),
   /** Clés des fournisseurs d'IA (offres gratuites pendant la bêta). */
   GEMINI_API_KEY: z.string().optional(),
   GROQ_API_KEY: z.string().optional(),

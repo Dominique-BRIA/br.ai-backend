@@ -57,14 +57,23 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext): void {
     }
 
     const code = newLoginCode();
-    await ctx.db.insert(loginCodes).values({
-      email,
-      codeHash: loginCodeHash(email, code),
-      expiresAt: new Date(Date.now() + CODE_TTL_MS),
-      invitationKind: invitation?.kind,
-      invitationId: invitation?.id,
-    });
-    await ctx.mailer.send(loginCodeMail(email, code, existing?.locale ?? "fr"));
+    const [stored] = await ctx.db
+      .insert(loginCodes)
+      .values({
+        email,
+        codeHash: loginCodeHash(email, code),
+        expiresAt: new Date(Date.now() + CODE_TTL_MS),
+        invitationKind: invitation?.kind,
+        invitationId: invitation?.id,
+      })
+      .returning({ id: loginCodes.id });
+    try {
+      await ctx.mailer.send(loginCodeMail(email, code, existing?.locale ?? "fr"));
+    } catch (error) {
+      // Code jamais reçu : on l'oublie, pour qu'un nouvel essai ne soit pas bloqué une minute.
+      if (stored) await ctx.db.delete(loginCodes).where(eq(loginCodes.id, stored.id));
+      throw error;
+    }
     return { newAccount: !existing };
   });
 

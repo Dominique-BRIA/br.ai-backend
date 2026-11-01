@@ -16,7 +16,13 @@ export const ADMIN_TOKEN = "jeton-admin-de-test-0123456789";
 /** Garde les e-mails envoyés pour retrouver les codes de connexion. */
 export class MemoryMailer implements Mailer {
   readonly sent: Mail[] = [];
+  /** Nombre de prochains envois qui échoueront, comme un refus du service d'e-mail. */
+  failNext = 0;
   async send(mail: Mail) {
+    if (this.failNext > 0) {
+      this.failNext--;
+      throw new Error("Envoi refusé (test)");
+    }
     this.sent.push(mail);
   }
   lastCodeFor(email: string): string {

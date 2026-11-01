@@ -21,6 +21,16 @@ describe("connexion par e-mail", () => {
     expect(response.json).toMatchObject({ error: { code: "invitation_invalid" } });
   });
 
+  it("un envoi qui échoue ne bloque pas une nouvelle demande", async () => {
+    const invite = await t.betaInvite(1);
+    const body = { email: "envoi@exemple.org", invitationCode: invite };
+    t.mailer.failNext = 1;
+    expect((await t.call("POST", "/auth/code", { body })).status).toBe(500);
+    const again = await t.call("POST", "/auth/code", { body });
+    expect(again.status).toBe(200);
+    expect(t.mailer.lastCodeFor("envoi@exemple.org")).toMatch(/^\d{6}$/);
+  });
+
   it("crée un compte avec une invitation, puis reconnecte sans invitation", async () => {
     const invite = await t.betaInvite(1);
     const email = "Awa@Exemple.org";
