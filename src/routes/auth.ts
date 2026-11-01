@@ -14,9 +14,9 @@ import { HttpError, parse } from "../http/errors.ts";
 import { loginCodeMail } from "../mail/templates.ts";
 import { memberIds } from "../services/access.ts";
 
-const CODE_TTL_MS = 10 * 60_000;
-const MAX_ATTEMPTS = 5;
-const RESEND_DELAY_MS = 60_000;
+export const CODE_TTL_MS = 10 * 60_000;
+export const MAX_ATTEMPTS = 5;
+export const RESEND_DELAY_MS = 60_000;
 
 type Invitation = { kind: "beta" | "team"; id: string; teamId?: string };
 
@@ -83,7 +83,7 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext): void {
     const [pending] = await ctx.db
       .select()
       .from(loginCodes)
-      .where(and(eq(loginCodes.email, email), isNull(loginCodes.consumedAt)))
+      .where(and(eq(loginCodes.email, email), eq(loginCodes.purpose, "login"), isNull(loginCodes.consumedAt)))
       .orderBy(desc(loginCodes.createdAt))
       .limit(1);
     if (!pending) throw new HttpError(401, "code_invalid", "Code incorrect.");

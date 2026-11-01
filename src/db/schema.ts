@@ -76,6 +76,10 @@ export const loginCodes = pgTable(
     /** Invitation présentée pour créer le compte, à consommer à la vérification. */
     invitationKind: invitationKind(),
     invitationId: uuid(),
+    /** « login » pour se connecter ; « email_change » pour confirmer la nouvelle adresse d'un compte. */
+    purpose: text().$type<"login" | "email_change">().notNull().default("login"),
+    /** Pour un changement d'adresse : le compte concerné. */
+    userId: uuid().references(() => users.id, { onDelete: "cascade" }),
     consumedAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
   },

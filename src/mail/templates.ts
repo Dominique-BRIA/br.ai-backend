@@ -43,9 +43,33 @@ const TEXTS = {
   },
 } satisfies Record<Locale, unknown>;
 
-/** E-mail contenant le code de connexion à 6 chiffres. */
-export function loginCodeMail(to: string, code: string, locale: Locale): Mail {
-  const t = TEXTS[locale];
+/** Ce qui change quand le code confirme la nouvelle adresse d'un compte. */
+const EMAIL_CHANGE_TEXTS = {
+  fr: {
+    subject: (code: string) => `Confirmez votre nouvelle adresse ${BRAND} : ${code}`,
+    title: "Confirmez votre nouvelle adresse",
+    intro: (brand: string) =>
+      `Saisissez ce code dans ${brand} pour utiliser cette adresse avec votre compte.`,
+    ignore:
+      "Si vous n'avez rien demandé, ignorez simplement cet e-mail : votre adresse ne changera pas sans ce code.",
+  },
+  en: {
+    subject: (code: string) => `Confirm your new ${BRAND} address: ${code}`,
+    title: "Confirm your new address",
+    intro: (brand: string) => `Enter this code in ${brand} to use this address with your account.`,
+    ignore:
+      "If you did not ask for it, simply ignore this email: your address will not change without this code.",
+  },
+} satisfies Record<Locale, unknown>;
+
+/** E-mail contenant un code à 6 chiffres : pour se connecter, ou pour confirmer une nouvelle adresse. */
+export function loginCodeMail(
+  to: string,
+  code: string,
+  locale: Locale,
+  purpose: "login" | "email_change" = "login",
+): Mail {
+  const t = { ...TEXTS[locale], ...(purpose === "email_change" ? EMAIL_CHANGE_TEXTS[locale] : {}) };
   const text = `${t.title} : ${code}\n\n${t.intro(BRAND)} ${t.validity}\n\n${t.ignore}\n\n${t.footer(BRAND)}`;
   const html = `<!doctype html>
 <html lang="${locale}">

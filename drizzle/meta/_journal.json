@@ -43,6 +43,13 @@
       "when": 1793524502078,
       "tag": "0005_coffre_de_secrets",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793526350785,
+      "tag": "0006_changement_adresse",
+      "breakpoints": true
     }
   ]
 }

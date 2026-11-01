@@ -38,6 +38,7 @@ export const apiErrorCode = z.enum([
   "file_too_large",
   "vault_disabled",
   "secret_exists",
+  "email_taken",
 ]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 
@@ -174,6 +175,20 @@ export const updateMeBody = z.object({
   locale: locale.optional(),
 });
 export type UpdateMeBody = z.input<typeof updateMeBody>;
+
+/** POST /me/email — envoie un code à la nouvelle adresse. */
+export const changeEmailBody = z.object({ email });
+export type ChangeEmailBody = z.input<typeof changeEmailBody>;
+
+/** POST /me/email/verify — le code reçu confirme la nouvelle adresse. */
+export const verifyEmailBody = z.object({
+  email,
+  code: z
+    .string()
+    .trim()
+    .regex(/^\d{6}$/),
+});
+export type VerifyEmailBody = z.input<typeof verifyEmailBody>;
 export const meResponse = z.object({ user });
 
 /** GET /me/sessions — les machines connectées au compte. DELETE /me/sessions/:sessionId la déconnecte. */

@@ -1,4 +1,5 @@
 import {
+  changeEmailBody,
   deleteAccountBody,
   type LocalMemory,
   type NotificationsResponse,
@@ -6,15 +7,19 @@ import {
   saveLocalMemoryBody,
   type User,
   updateMeBody,
+  verifyEmailBody,
 } from "@br-ia/protocol";
-import { and, count, desc, eq, inArray, isNull, ne } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNull, ne, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { loginCodeHash, newLoginCode } from "../auth/secrets.ts";
 import type { AppContext } from "../context.ts";
-import { localMemories, sessions, teamMembers, teams, users } from "../db/schema.ts";
+import { localMemories, loginCodes, sessions, teamMembers, teams, users } from "../db/schema.ts";
 import { HttpError, notFound, parse } from "../http/errors.ts";
+import { loginCodeMail } from "../mail/templates.ts";
 import { teammateIds } from "../services/access.ts";
 import { listNotifications } from "../services/notifications.ts";
+import { CODE_TTL_MS, MAX_ATTEMPTS, RESEND_DELAY_MS } from "./auth.ts";
 
 const sessionParams = z.object({ sessionId: z.uuid() });
 
@@ -35,6 +40,93 @@ export function meRoutes(app: FastifyInstance, ctx: AppContext): void {
     if (changes.displayName !== undefined) {
       ctx.hub.sendTo(await teammateIds(ctx, request.userId), { type: "workspace.changed" });
     }
+    return { user: { id: user.id, email: user.email, displayName: user.displayName, locale: user.locale } };
+  });
+
+  /** Changement d'adresse : un code part vers la nouvelle adresse, qui doit être libre. */
+  app.post("/me/email", async (request): Promise<{ sent: true }> => {
+    const { email } = parse(changeEmailBody, request.body);
+    const [user] = await ctx.db.select().from(users).where(eq(users.id, request.userId));
+    if (!user) throw notFound("Compte introuvable.");
+    if (user.email === email) {
+      throw new HttpError(400, "invalid_request", "C'est déjà l'adresse de votre compte.");
+    }
+    const [taken] = await ctx.db.select({ id: users.id }).from(users).where(eq(users.email, email));
+    if (taken)
+      throw new HttpError(409, "email_taken", "Cette adresse est déjà utilisée par un autre compte.");
+
+    const [recent] = await ctx.db
+      .select({ createdAt: loginCodes.createdAt })
+      .from(loginCodes)
+      .where(eq(loginCodes.email, email))
+      .orderBy(desc(loginCodes.createdAt))
+      .limit(1);
+    if (recent && Date.now() - recent.createdAt.getTime() < RESEND_DELAY_MS) {
+      throw new HttpError(
+        429,
+        "too_many_requests",
+        "Un code vient d'être envoyé. Réessayez dans une minute.",
+      );
+    }
+
+    const code = newLoginCode();
+    const [stored] = await ctx.db
+      .insert(loginCodes)
+      .values({
+        email,
+        codeHash: loginCodeHash(email, code),
+        expiresAt: new Date(Date.now() + CODE_TTL_MS),
+        purpose: "email_change",
+        userId: request.userId,
+      })
+      .returning({ id: loginCodes.id });
+    try {
+      await ctx.mailer.send(loginCodeMail(email, code, user.locale, "email_change"));
+    } catch (error) {
+      if (stored) await ctx.db.delete(loginCodes).where(eq(loginCodes.id, stored.id));
+      throw error;
+    }
+    return { sent: true };
+  });
+
+  /** Le code reçu à la nouvelle adresse la confirme : elle remplace l'ancienne. */
+  app.post("/me/email/verify", async (request): Promise<{ user: User }> => {
+    const { email, code } = parse(verifyEmailBody, request.body);
+    const [pending] = await ctx.db
+      .select()
+      .from(loginCodes)
+      .where(
+        and(
+          eq(loginCodes.email, email),
+          eq(loginCodes.purpose, "email_change"),
+          eq(loginCodes.userId, request.userId),
+          isNull(loginCodes.consumedAt),
+        ),
+      )
+      .orderBy(desc(loginCodes.createdAt))
+      .limit(1);
+    if (!pending) throw new HttpError(401, "code_invalid", "Code incorrect.");
+    if (pending.expiresAt.getTime() < Date.now()) {
+      throw new HttpError(401, "code_expired", "Ce code a expiré. Demandez-en un nouveau.");
+    }
+    if (pending.attempts >= MAX_ATTEMPTS) {
+      throw new HttpError(429, "too_many_attempts", "Trop d'essais. Demandez un nouveau code.");
+    }
+    if (pending.codeHash !== loginCodeHash(email, code)) {
+      await ctx.db
+        .update(loginCodes)
+        .set({ attempts: sql`${loginCodes.attempts} + 1` })
+        .where(eq(loginCodes.id, pending.id));
+      throw new HttpError(401, "code_invalid", "Code incorrect.");
+    }
+    // L'adresse a pu être prise entre-temps.
+    const [taken] = await ctx.db.select({ id: users.id }).from(users).where(eq(users.email, email));
+    if (taken)
+      throw new HttpError(409, "email_taken", "Cette adresse est déjà utilisée par un autre compte.");
+
+    await ctx.db.update(loginCodes).set({ consumedAt: new Date() }).where(eq(loginCodes.id, pending.id));
+    const [user] = await ctx.db.update(users).set({ email }).where(eq(users.id, request.userId)).returning();
+    if (!user) throw notFound("Compte introuvable.");
     return { user: { id: user.id, email: user.email, displayName: user.displayName, locale: user.locale } };
   });
 

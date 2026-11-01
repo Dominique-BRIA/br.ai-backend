@@ -102,3 +102,49 @@ describe("suppression du compte", () => {
     ).toBe(204);
   });
 });
+
+describe("changement d'adresse e-mail", () => {
+  it("confirme la nouvelle adresse par un code envoyé à celle-ci", async () => {
+    const awa = await t.signUp("awa-ancienne@exemple.org", "Awa");
+    expect(
+      (await t.call("POST", "/me/email", { token: awa.token, body: { email: "Awa-Nouvelle@Exemple.org" } }))
+        .status,
+    ).toBe(200);
+    const mail = t.mailer.sent.at(-1);
+    expect(mail?.to).toBe("awa-nouvelle@exemple.org");
+    expect(mail?.subject).toContain("Confirmez votre nouvelle adresse");
+
+    const wrong = await t.call("POST", "/me/email/verify", {
+      token: awa.token,
+      body: { email: "awa-nouvelle@exemple.org", code: "000000" },
+    });
+    expect(wrong.json).toMatchObject({ error: { code: "code_invalid" } });
+
+    const { json } = await t.call<{ user: User }>("POST", "/me/email/verify", {
+      token: awa.token,
+      body: { email: "awa-nouvelle@exemple.org", code: t.mailer.lastCodeFor("awa-nouvelle@exemple.org") },
+    });
+    expect(json.user.email).toBe("awa-nouvelle@exemple.org");
+  });
+
+  it("refuse une adresse déjà prise, et un code de changement ne permet pas de se connecter", async () => {
+    const binta = await t.signUp("binta@exemple.org", "Binta");
+    await t.signUp("prise@exemple.org", "Autre");
+    const taken = await t.call("POST", "/me/email", {
+      token: binta.token,
+      body: { email: "prise@exemple.org" },
+    });
+    expect(taken.json).toMatchObject({ error: { code: "email_taken" } });
+
+    await t.call("POST", "/me/email", { token: binta.token, body: { email: "binta-libre@exemple.org" } });
+    const login = await t.call("POST", "/auth/verify", {
+      body: {
+        email: "binta-libre@exemple.org",
+        code: t.mailer.lastCodeFor("binta-libre@exemple.org"),
+        machineId: "m",
+        displayName: "Intrus",
+      },
+    });
+    expect(login.json).toMatchObject({ error: { code: "code_invalid" } });
+  });
+});
