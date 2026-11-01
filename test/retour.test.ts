@@ -121,3 +121,25 @@ describe("résumé d'absence", () => {
     expect(transcript).not.toContain("Mon propre message");
   });
 });
+
+describe("retours des testeurs et auteur du message", () => {
+  it("enregistre un retour envoyé depuis l'extension", async () => {
+    const sent = await t.call("POST", "/feedback", {
+      token: ali.token,
+      body: { text: "Le bouton Ouvrir ne marchait pas.", projectId, extensionVersion: "0.5.0" },
+    });
+    expect(sent.status).toBe(201);
+    const { feedback } = await import("../src/db/schema.ts");
+    const rows = await t.db.select().from(feedback);
+    expect(rows).toMatchObject([
+      { userId: ali.userId, text: "Le bouton Ouvrir ne marchait pas.", status: "new" },
+    ]);
+  });
+
+  it("rappelle à l'agent à qui il répond", async () => {
+    ai.replies.push(quiet);
+    await say(ali.token, "Comment va l'IA ?");
+    const context = ai.requests.at(-1)?.messages.at(-1)?.content ?? "";
+    expect(context).toContain("tu t'adresses à Ali, l'auteur de ce nouveau message");
+  });
+});

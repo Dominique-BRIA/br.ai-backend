@@ -323,6 +323,8 @@ export class ServeurAgent {
       ...(message.attachments.length > 0
         ? [`Pièces jointes : ${message.attachments.map((attachment) => attachment.name).join(", ")}`]
         : []),
+      "",
+      `Si tu réponds, tu t'adresses à ${name(message.author)}, l'auteur de ce nouveau message, et à personne d'autre.`,
     ].join("\n");
 
     return [

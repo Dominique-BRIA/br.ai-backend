@@ -322,3 +322,18 @@ export const secretLog = pgTable(
   },
   (t) => [index().on(t.projectId, t.createdAt)],
 );
+
+/** Retours des testeurs, envoyés depuis l'extension et suivis dans le tableau de bord. */
+export const feedback = pgTable(
+  "feedback",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    userId: uuid().references(() => users.id, { onDelete: "set null" }),
+    projectId: uuid().references(() => projects.id, { onDelete: "set null" }),
+    text: text().notNull(),
+    status: text().$type<"new" | "in_progress" | "done">().notNull().default("new"),
+    extensionVersion: text(),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.status, t.createdAt)],
+);

@@ -5,6 +5,7 @@ import {
   type NotificationsResponse,
   type SessionsResponse,
   saveLocalMemoryBody,
+  sendFeedbackBody,
   type User,
   updateMeBody,
   verifyEmailBody,
@@ -14,10 +15,10 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { loginCodeHash, newLoginCode } from "../auth/secrets.ts";
 import type { AppContext } from "../context.ts";
-import { localMemories, loginCodes, sessions, teamMembers, teams, users } from "../db/schema.ts";
+import { feedback, localMemories, loginCodes, sessions, teamMembers, teams, users } from "../db/schema.ts";
 import { HttpError, notFound, parse } from "../http/errors.ts";
 import { loginCodeMail } from "../mail/templates.ts";
-import { teammateIds } from "../services/access.ts";
+import { requireProject, teammateIds } from "../services/access.ts";
 import { listNotifications } from "../services/notifications.ts";
 import { CODE_TTL_MS, MAX_ATTEMPTS, RESEND_DELAY_MS } from "./auth.ts";
 
@@ -171,6 +172,14 @@ export function meRoutes(app: FastifyInstance, ctx: AppContext): void {
       .values({ userId: request.userId, content, updatedAt })
       .onConflictDoUpdate({ target: localMemories.userId, set: { content, updatedAt } });
     return { content, updatedAt: updatedAt.toISOString() };
+  });
+
+  /** Un retour de testeur, lu dans le tableau de bord d'administration. */
+  app.post("/feedback", async (request, reply) => {
+    const body = parse(sendFeedbackBody, request.body);
+    if (body.projectId) await requireProject(ctx, request.userId, body.projectId);
+    await ctx.db.insert(feedback).values({ userId: request.userId, ...body });
+    return reply.code(201).send({ ok: true });
   });
 
   /** Déconnecte une machine : sa session est révoquée et sa connexion temps réel fermée. */

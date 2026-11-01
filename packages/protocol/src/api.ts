@@ -284,6 +284,16 @@ export type LocalMemory = z.infer<typeof localMemory>;
 export const saveLocalMemoryBody = z.object({ content: z.string().max(20_000) });
 export type SaveLocalMemoryBody = z.input<typeof saveLocalMemoryBody>;
 
+// Retours des testeurs
+
+/** POST /feedback — un retour envoyé depuis l'extension. */
+export const sendFeedbackBody = z.object({
+  text: z.string().trim().min(1).max(5000),
+  projectId: z.uuid().optional(),
+  extensionVersion: z.string().max(50).optional(),
+});
+export type SendFeedbackBody = z.input<typeof sendFeedbackBody>;
+
 // Coffre de secrets
 
 /** Nom d'une variable d'environnement : lettres capitales, chiffres et soulignés. */
