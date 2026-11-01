@@ -1,7 +1,7 @@
 import { and, eq, isNull } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AppContext } from "../context.ts";
-import { sessions } from "../db/schema.ts";
+import { sessions, users } from "../db/schema.ts";
 import { HttpError } from "../http/errors.ts";
 import { newSessionToken, sha256 } from "./secrets.ts";
 
@@ -25,7 +25,8 @@ export async function findSession(ctx: AppContext, token: string) {
   const [session] = await ctx.db
     .select({ id: sessions.id, userId: sessions.userId })
     .from(sessions)
-    .where(and(eq(sessions.tokenHash, sha256(token)), isNull(sessions.revokedAt)));
+    .innerJoin(users, eq(users.id, sessions.userId))
+    .where(and(eq(sessions.tokenHash, sha256(token)), isNull(sessions.revokedAt), isNull(users.suspendedAt)));
   if (!session) return null;
   await ctx.db.update(sessions).set({ lastSeenAt: new Date() }).where(eq(sessions.id, session.id));
   return session;

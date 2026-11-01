@@ -30,6 +30,8 @@ export const users = pgTable("users", {
   email: text().notNull().unique(),
   displayName: text().notNull(),
   locale: locale().notNull().default("fr"),
+  /** Compte suspendu par un administrateur : ses sessions sont refusées. */
+  suspendedAt: timestamp({ withTimezone: true }),
   createdAt: createdAt(),
 });
 

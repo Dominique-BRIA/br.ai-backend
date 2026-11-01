@@ -71,6 +71,13 @@
       "when": 1793529835918,
       "tag": "0009_codes_promo",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793530156817,
+      "tag": "0010_suspension",
+      "breakpoints": true
     }
   ]
 }

@@ -25,9 +25,12 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.post("/auth/code", async (request): Promise<RequestCodeResponse> => {
     const { email, invitationCode } = parse(requestCodeBody, request.body);
     const [existing] = await ctx.db
-      .select({ id: users.id, locale: users.locale })
+      .select({ id: users.id, locale: users.locale, suspendedAt: users.suspendedAt })
       .from(users)
       .where(eq(users.email, email));
+    if (existing?.suspendedAt) {
+      throw new HttpError(403, "account_suspended", "Ce compte est suspendu. Contactez l'équipe de <br>.ia.");
+    }
 
     let invitation: Invitation | null = null;
     if (!existing) {

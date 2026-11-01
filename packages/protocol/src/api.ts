@@ -45,6 +45,7 @@ export const apiErrorCode = z.enum([
   "promo_exhausted",
   "promo_already_used",
   "promo_not_eligible",
+  "account_suspended",
 ]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 

@@ -97,7 +97,9 @@ export async function buildApp(options: AppOptions) {
     memoryRoutes(scope, ctx);
     orderRoutes(scope, ctx, kitchen);
   });
-  await app.register(async (scope) => adminRoutes(scope, ctx, options.adminToken));
+  await app.register(async (scope) =>
+    adminRoutes(scope, ctx, options.adminToken, { serveur: serveurChain, cuisinier: cuisinierChain }),
+  );
 
   // Pas d'Object.assign sur l'instance Fastify : elle se comporte comme une promesse,
   // et l'attendre ferait perdre les propriétés ajoutées dans les types.

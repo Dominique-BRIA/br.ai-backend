@@ -3,11 +3,13 @@ import { createPromoBody, type PromoCode } from "@br-ia/protocol";
 import { desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import type { ModelChoice } from "../ai/client.ts";
 import { newInvitationCode } from "../auth/secrets.ts";
 import type { AppContext } from "../context.ts";
 import { betaInvites, promoCodes } from "../db/schema.ts";
 import { HttpError, parse } from "../http/errors.ts";
 import { createPromoCodes, toPromoCode } from "../services/promo.ts";
+import { dashboardRoutes } from "./dashboard.ts";
 
 const createBetaInviteBody = z.object({
   maxUses: z.number().int().min(1).max(1000).default(1),
@@ -19,13 +21,20 @@ const createBetaInviteBody = z.object({
  * Routes de l'équipe interne, protégées par le jeton `ADMIN_TOKEN`.
  * Provisoire : le tableau de bord d'administration (lot 6) les remplacera.
  */
-export function adminRoutes(app: FastifyInstance, ctx: AppContext, adminToken: string | undefined): void {
+export function adminRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  adminToken: string | undefined,
+  chains: { serveur: ModelChoice[]; cuisinier: ModelChoice[] } = { serveur: [], cuisinier: [] },
+): void {
   app.addHook("preHandler", async (request) => {
     const given = request.headers["x-admin-token"];
     if (!adminToken || typeof given !== "string" || !sameSecret(given, adminToken)) {
       throw new HttpError(401, "unauthenticated", "Accès réservé à l'équipe interne.");
     }
   });
+
+  dashboardRoutes(app, ctx, chains);
 
   app.get("/admin/promo-codes", async (): Promise<{ codes: PromoCode[] }> => {
     const rows = await ctx.db.select().from(promoCodes).orderBy(desc(promoCodes.createdAt)).limit(500);
