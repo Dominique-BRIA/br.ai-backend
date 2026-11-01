@@ -29,6 +29,13 @@
       "when": 1793484748799,
       "tag": "0003_commandes",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793523558595,
+      "tag": "0004_memoire_locale",
+      "breakpoints": true
     }
   ]
 }

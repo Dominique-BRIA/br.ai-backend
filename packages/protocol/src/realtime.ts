@@ -125,6 +125,17 @@ const workspaceChanged = z.object({
   type: z.literal("workspace.changed"),
 });
 
+/**
+ * Le serveur a relevé une préférence de travail du membre (« je fais mes push moi-même ») :
+ * ses machines l'ajoutent à leur mémoire locale.
+ */
+const preferenceNoted = z.object({
+  type: z.literal("preference.noted"),
+  text: z.string(),
+  projectId: z.uuid(),
+  messageId: z.uuid(),
+});
+
 export const errorCode = z.enum([
   "invalid_message",
   "hello_expected",
@@ -147,6 +158,7 @@ export const serverMessage = z.discriminatedUnion("type", [
   presenceChanged,
   memoryChanged,
   workspaceChanged,
+  preferenceNoted,
   toolCall,
   orderUpdated,
   error,
@@ -160,6 +172,7 @@ export type ServerEvent = Extract<
       | "presence.changed"
       | "memory.changed"
       | "workspace.changed"
+      | "preference.noted"
       | "tool.call"
       | "order.updated";
   }

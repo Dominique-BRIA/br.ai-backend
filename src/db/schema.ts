@@ -252,3 +252,16 @@ export const orders = pgTable(
   },
   (t) => [uniqueIndex().on(t.projectId, t.number), index().on(t.status)],
 );
+
+/**
+ * Copie de sauvegarde de la mémoire locale d'un membre (`~/.bria/memoire.md`) : ses
+ * préférences de travail. Elle sert à la restaurer sur une nouvelle machine, et le
+ * cuisinier la lit avant de travailler chez lui.
+ */
+export const localMemories = pgTable("local_memories", {
+  userId: uuid()
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  content: text().notNull(),
+  updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+});

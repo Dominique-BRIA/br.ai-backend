@@ -2,7 +2,7 @@ import type { MemoryItem, Message, TeamRole } from "@br-ia/protocol";
 import { and, asc, desc, eq, lte } from "drizzle-orm";
 import { z } from "zod";
 import { type Ai, AiUnavailableError, type ChatMessage, type ModelChoice } from "../ai/client.ts";
-import type { AppContext } from "../context.ts";
+import type { AppContext, CatchUpRequest } from "../context.ts";
 import { messages, teamMembers, users } from "../db/schema.ts";
 import { addMemory, announceMemoryChange, listMemory, setMemoryStatus } from "../services/memory.ts";
 import { postAgentMessage, toMessages } from "../services/messages.ts";
@@ -41,8 +41,22 @@ const output = z.object({
     })
     .nullable()
     .default(null),
+  /** Préférence de travail personnelle de l'auteur, à garder sur ses machines. */
+  preference: z.string().trim().min(1).max(300).nullable().default(null),
 });
 export type ServeurOutput = z.infer<typeof output>;
+
+/** Résumé d'absence : en dessous de ce nombre de messages, la liste suffit. */
+export const CATCH_UP_MIN_MESSAGES = 3;
+
+const CATCH_UP_PROMPT = `Tu es le serveur de <br>.ia, l'agent présent dans le chat d'une équipe.
+Un membre revient après plusieurs heures d'absence. Résume-lui ce qui s'est passé dans le chat pendant ce temps, en t'adressant à lui.
+
+- 3 à 6 puces au plus, en Markdown, dans la langue des messages.
+- D'abord ce qui le concerne : les questions qu'on lui a posées, les mentions, ce qu'on attend de lui.
+- Puis les décisions prises, les commandes passées au cuisinier et leur résultat, les désaccords en cours.
+- Cite les auteurs par leur prénom. N'invente rien ; ne recopie pas les messages.
+- Ton de collègue, sans emoji ni point d'exclamation. Pas de titre ni de formule d'introduction.`;
 
 /** Lit la réponse JSON de l'IA ; `null` si elle ne respecte pas le format attendu. */
 export function parseServeurOutput(content: string): ServeurOutput | null {
@@ -72,6 +86,9 @@ Mémoire du projet :
 - "stop" n'est permis qu'au chef d'équipe : utilise "resolve" avec status "stopped" si le chef annule une décision.
 - N'ajoute rien qui figure déjà dans la mémoire. Si rien ne change, renvoie une liste vide.
 
+Préférence personnelle :
+- Si l'auteur exprime une préférence durable sur la façon dont le cuisinier doit travailler chez lui (par exemple « je fais mes push moi-même », « pas de nouvelle dépendance sans me demander », « écris les commentaires en anglais »), remplis "preference" avec une phrase courte à la troisième personne, sinon null. Elle sera gardée sur ses machines.
+
 Ta réponse (quand tu réponds) :
 - dans la langue du message, sur le ton d'un collègue : clair, concis, sans emoji ni point d'exclamation ;
 - en Markdown si c'est utile (listes, tableaux) ;
@@ -79,7 +96,13 @@ Ta réponse (quand tu réponds) :
 Si le message contient @bria, tu dois répondre.
 
 Renvoie uniquement un objet JSON de la forme :
-{"category": "...", "reply": "texte ou null", "memory": [{"op": "add", "type": "...", "text": "..."}, {"op": "resolve", "ref": "M1", "status": "resolved"}], "order": null ou {"title": "...", "brief": "..."}}`;
+{"category": "...", "reply": "texte ou null", "memory": [{"op": "add", "type": "...", "text": "..."}, {"op": "resolve", "ref": "M1", "status": "resolved"}], "order": null ou {"title": "...", "brief": "..."}, "preference": null ou "..."}`;
+
+/** Nom d'un auteur tel que l'IA le lit dans le fil. */
+function authorLabel(author: Message["author"]): string {
+  if (author.kind === "member") return author.displayName;
+  return author.kind === "former_member" ? "ancien membre" : author.kind;
+}
 
 interface Member {
   userId: string;
@@ -121,6 +144,34 @@ export class ServeurAgent {
       if (this.#queues.get(message.projectId) === next) this.#queues.delete(message.projectId);
     });
     return next;
+  }
+
+  /** Résume à un membre qui revient les messages échangés pendant son absence. */
+  async summarize(request: CatchUpRequest): Promise<string | null> {
+    const transcript = request.messages.map(
+      (entry) =>
+        `[${entry.createdAt.slice(0, 16).replace("T", " ")}] ${authorLabel(entry.author)} : ${entry.body}`,
+    );
+    try {
+      const completion = await this.ai.complete(this.chain, {
+        purpose: "absence",
+        teamId: request.teamId,
+        projectId: request.projectId,
+        messages: [
+          { role: "system", content: CATCH_UP_PROMPT },
+          {
+            role: "user",
+            content: [`Membre qui revient : ${request.userName}`, "", "Messages :", ...transcript].join("\n"),
+          },
+        ],
+        accept: (content) => content.trim().length > 0,
+      });
+      return completion.content.trim();
+    } catch (error) {
+      if (!(error instanceof AiUnavailableError)) throw error;
+      this.ctx.log.warn({ projectId: request.projectId }, error.message);
+      return null;
+    }
   }
 
   /** Attend la fin des traitements en cours (tests, arrêt du serveur). */
@@ -197,6 +248,16 @@ export class ServeurAgent {
     }
     if (memoryChanged) await announceMemoryChange(this.ctx, teamId, message.projectId);
 
+    // La préférence part vers les machines de son auteur, qui la gardent dans leur mémoire locale.
+    if (result.preference) {
+      this.ctx.hub.sendTo([author.userId], {
+        type: "preference.noted",
+        text: result.preference,
+        projectId: message.projectId,
+        messageId: message.id,
+      });
+    }
+
     if (result.reply) {
       await postAgentMessage(this.ctx, {
         projectId: message.projectId,
@@ -228,12 +289,7 @@ export class ServeurAgent {
     memory: MemoryItem[],
     refs: Map<string, MemoryItem>,
   ): ChatMessage[] {
-    const name = (author: Message["author"]) =>
-      author.kind === "member"
-        ? author.displayName
-        : author.kind === "former_member"
-          ? "ancien membre"
-          : author.kind;
+    const name = authorLabel;
     const team = members.map(
       (member) => `- ${member.displayName}${member.role === "chef" ? " (chef d'équipe)" : ""}`,
     );

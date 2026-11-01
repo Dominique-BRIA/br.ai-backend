@@ -1,14 +1,25 @@
-import { type ListMessagesResponse, listMessagesQuery, type Message, sendMessageBody } from "@br-ia/protocol";
-import { and, desc, eq, inArray, isNull, lt, or, type SQL } from "drizzle-orm";
+import {
+  type CatchUpResponse,
+  catchUpBody,
+  type ListMessagesResponse,
+  listMessagesQuery,
+  type Message,
+  sendMessageBody,
+} from "@br-ia/protocol";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, type SQL } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
+import { CATCH_UP_MIN_MESSAGES } from "../agents/serveur.ts";
 import type { AppContext } from "../context.ts";
-import { attachments, messages, teamMembers } from "../db/schema.ts";
+import { attachments, messages, teamMembers, users } from "../db/schema.ts";
 import { notFound, parse } from "../http/errors.ts";
 import { memberIds, requireProject } from "../services/access.ts";
 import { loadMessage, toMessages } from "../services/messages.ts";
 
 const projectParams = z.object({ projectId: z.uuid() });
+
+/** Messages résumés au plus : au-delà, le résumé porte sur les plus anciens, ce qui suffit. */
+const CATCH_UP_LIMIT = 200;
 
 export function messageRoutes(app: FastifyInstance, ctx: AppContext): void {
   app.get("/projects/:projectId/messages", async (request): Promise<ListMessagesResponse> => {
@@ -39,6 +50,38 @@ export function messageRoutes(app: FastifyInstance, ctx: AppContext): void {
     const hasMore = rows.length > limit;
     const page = rows.slice(0, limit).reverse();
     return { messages: await toMessages(ctx, page), hasMore };
+  });
+
+  /** Résumé « pendant ton absence » : les messages des autres depuis `since`, résumés par le serveur. */
+  app.post("/projects/:projectId/catch-up", async (request): Promise<CatchUpResponse> => {
+    const { projectId } = parse(projectParams, request.params);
+    const { since } = parse(catchUpBody, request.body);
+    const { project } = await requireProject(ctx, request.userId, projectId);
+    const rows = await ctx.db
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.projectId, projectId),
+          gt(messages.createdAt, new Date(since)),
+          or(isNull(messages.authorUserId), ne(messages.authorUserId, request.userId)),
+        ),
+      )
+      .orderBy(asc(messages.createdAt))
+      .limit(CATCH_UP_LIMIT);
+    if (rows.length < CATCH_UP_MIN_MESSAGES) return { count: rows.length, summary: null };
+
+    const [me] = await ctx.db
+      .select({ displayName: users.displayName })
+      .from(users)
+      .where(eq(users.id, request.userId));
+    const summary = await ctx.summarize({
+      projectId,
+      teamId: project.teamId,
+      userName: me?.displayName ?? "",
+      messages: await toMessages(ctx, rows),
+    });
+    return { count: rows.length, summary };
   });
 
   app.post("/projects/:projectId/messages", async (request): Promise<{ message: Message }> => {

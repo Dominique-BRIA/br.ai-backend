@@ -47,7 +47,7 @@ export async function startApp(options: Pick<AppOptions, "ai" | "serveurChain" |
   const wsUrl = `${address.replace("http", "ws")}${WS_PATH}`;
 
   async function call<T = unknown>(
-    method: "GET" | "POST" | "PATCH" | "DELETE",
+    method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE",
     url: string,
     options: { token?: string; body?: unknown; admin?: boolean } = {},
   ): Promise<{ status: number; json: T }> {

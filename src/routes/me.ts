@@ -1,11 +1,20 @@
-import { deleteAccountBody, type SessionsResponse, type User, updateMeBody } from "@br-ia/protocol";
+import {
+  deleteAccountBody,
+  type LocalMemory,
+  type NotificationsResponse,
+  type SessionsResponse,
+  saveLocalMemoryBody,
+  type User,
+  updateMeBody,
+} from "@br-ia/protocol";
 import { and, count, desc, eq, inArray, isNull, ne } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
-import { sessions, teamMembers, teams, users } from "../db/schema.ts";
+import { localMemories, sessions, teamMembers, teams, users } from "../db/schema.ts";
 import { HttpError, notFound, parse } from "../http/errors.ts";
 import { teammateIds } from "../services/access.ts";
+import { listNotifications } from "../services/notifications.ts";
 
 const sessionParams = z.object({ sessionId: z.uuid() });
 
@@ -47,6 +56,29 @@ export function meRoutes(app: FastifyInstance, ctx: AppContext): void {
         online: online.has(row.id),
       })),
     };
+  });
+
+  app.get(
+    "/me/notifications",
+    async (request): Promise<NotificationsResponse> => ({
+      notifications: await listNotifications(ctx, request.userId),
+    }),
+  );
+
+  /** Copie de sauvegarde de la mémoire locale (`~/.bria/memoire.md`), pour une nouvelle machine. */
+  app.get("/me/local-memory", async (request): Promise<LocalMemory> => {
+    const [row] = await ctx.db.select().from(localMemories).where(eq(localMemories.userId, request.userId));
+    return { content: row?.content ?? "", updatedAt: row?.updatedAt.toISOString() ?? null };
+  });
+
+  app.put("/me/local-memory", async (request): Promise<LocalMemory> => {
+    const { content } = parse(saveLocalMemoryBody, request.body);
+    const updatedAt = new Date();
+    await ctx.db
+      .insert(localMemories)
+      .values({ userId: request.userId, content, updatedAt })
+      .onConflictDoUpdate({ target: localMemories.userId, set: { content, updatedAt } });
+    return { content, updatedAt: updatedAt.toISOString() };
   });
 
   /** Déconnecte une machine : sa session est révoquée et sa connexion temps réel fermée. */

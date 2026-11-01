@@ -10,7 +10,7 @@ import {
   type ToolDefinition,
 } from "../ai/client.ts";
 import type { AppContext } from "../context.ts";
-import { type OrderStepRow, orders, projects, users } from "../db/schema.ts";
+import { localMemories, type OrderStepRow, orders, projects, users } from "../db/schema.ts";
 import type { LiveConnection } from "../realtime/hub.ts";
 import { memberIds } from "../services/access.ts";
 import { announceMemoryChange, setMemoryStatus } from "../services/memory.ts";
@@ -272,6 +272,11 @@ export class Kitchen implements KitchenHooks {
     });
 
     const shell = machine.machine.os === "windows" ? "cmd.exe (Windows)" : "sh";
+    // Les préférences de travail du propriétaire de la machine (sa mémoire locale).
+    const [preferences] = await this.#ctx.db
+      .select({ content: localMemories.content })
+      .from(localMemories)
+      .where(eq(localMemories.userId, machine.userId));
     const messages: ChatMessage[] = [
       { role: "system", content: SYSTEM_PROMPT },
       {
@@ -285,6 +290,13 @@ export class Kitchen implements KitchenHooks {
           ...(machine.machine.folders
             ? [
                 `Dossiers de ${ownerName} sur cette machine : personnel ${machine.machine.folders.home}, Bureau ${machine.machine.folders.desktop}, Documents ${machine.machine.folders.documents}.`,
+              ]
+            : []),
+          ...(preferences?.content.trim()
+            ? [
+                "",
+                `Préférences de travail de ${ownerName} (sa mémoire locale), à respecter :`,
+                preferences.content.trim(),
               ]
             : []),
         ].join("\n"),

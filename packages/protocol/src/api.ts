@@ -210,3 +210,59 @@ export type OrdersResponse = z.infer<typeof ordersResponse>;
 
 /** POST /orders/:orderId/stop — réservé au demandeur et au chef. */
 export const orderResponse = z.object({ order });
+export type OrderResponse = z.infer<typeof orderResponse>;
+
+// Notifications
+
+export const notificationKind = z.enum(["mention", "reply", "order"]);
+export type NotificationKind = z.infer<typeof notificationKind>;
+
+/**
+ * Ce qui concerne le membre dans ses projets : une mention, une réponse de l'IA à l'un de
+ * ses messages, ou la fin d'une commande qu'il a demandée.
+ */
+export const notification = z.object({
+  /** Identifiant stable : celui du message, ou de la commande. */
+  id: z.string(),
+  kind: notificationKind,
+  projectId: z.uuid(),
+  projectName: z.string(),
+  teamName: z.string(),
+  /** Message à afficher dans le chat (mention ou réponse). */
+  messageId: z.uuid().nullable(),
+  /** Auteur affiché : un membre, le serveur ou le cuisinier. */
+  author: z.string(),
+  text: z.string(),
+  /** Pour une commande : son statut final. */
+  orderStatus: z.enum(["done", "failed", "stopped"]).nullable(),
+  createdAt: z.iso.datetime(),
+});
+export type Notification = z.infer<typeof notification>;
+
+/** GET /me/notifications — les 50 plus récentes. */
+export const notificationsResponse = z.object({ notifications: z.array(notification) });
+export type NotificationsResponse = z.infer<typeof notificationsResponse>;
+
+// Résumé d'absence
+
+/** POST /projects/:projectId/catch-up — ce qui s'est passé depuis `since`. */
+export const catchUpBody = z.object({ since: z.iso.datetime() });
+export type CatchUpBody = z.input<typeof catchUpBody>;
+export const catchUpResponse = z.object({
+  /** Nombre de messages des autres depuis `since`. */
+  count: z.number().int(),
+  /** Résumé en Markdown ; absent s'il y a trop peu de messages ou si aucune IA n'est disponible. */
+  summary: z.string().nullable(),
+});
+export type CatchUpResponse = z.infer<typeof catchUpResponse>;
+
+// Mémoire locale de la machine
+
+/** GET et PUT /me/local-memory — copie de sauvegarde de `~/.bria/memoire.md`. */
+export const localMemory = z.object({
+  content: z.string().max(20_000),
+  updatedAt: z.iso.datetime().nullable(),
+});
+export type LocalMemory = z.infer<typeof localMemory>;
+export const saveLocalMemoryBody = z.object({ content: z.string().max(20_000) });
+export type SaveLocalMemoryBody = z.input<typeof saveLocalMemoryBody>;

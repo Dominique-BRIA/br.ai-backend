@@ -1,3 +1,5 @@
+import { appendFileSync } from "node:fs";
+import { join } from "node:path";
 import { eq } from "drizzle-orm";
 import { parseChain } from "./ai/client.ts";
 import { buildApp } from "./app.ts";
@@ -68,6 +70,20 @@ app.log.info(
     ? `Pièces jointes sur Backblaze B2 (${b2.bucket}).`
     : `Pièces jointes sur le disque (${config.FILES_DIR}).`,
 );
+
+// Un arrêt inattendu est noté directement dans un fichier : les journaux passent par un
+// fil séparé (pino-pretty) qui peut disparaître avec le processus sans avoir tout écrit.
+const crashLog = join(config.PGLITE_DIR, "..", "arrets.log");
+const noteExit = (reason: string) =>
+  appendFileSync(crashLog, `${new Date().toISOString()} ${reason}\n`, { encoding: "utf8" });
+process.on("uncaughtException", (error) => {
+  noteExit(`exception non rattrapée : ${error.stack ?? error.message}`);
+  process.exit(1);
+});
+process.on("unhandledRejection", (reason) => {
+  noteExit(`promesse rejetée non traitée : ${reason instanceof Error ? reason.stack : String(reason)}`);
+});
+process.on("exit", (code) => noteExit(`arrêt du processus, code ${code}`));
 
 const shutdown = async () => {
   await app.close();

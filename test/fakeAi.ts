@@ -10,7 +10,8 @@ export interface ScriptedTurn {
 /** Fausse IA : renvoie les réponses prévues, dans l'ordre, et garde les demandes reçues. */
 export class ScriptedAi implements Ai {
   readonly requests: CompletionRequest[] = [];
-  readonly replies: (object | "indisponible")[] = [];
+  /** Réponses prévues : un objet est renvoyé en JSON, un texte tel quel. */
+  readonly replies: (object | string)[] = [];
   readonly toolRequests: ToolTurnRequest[] = [];
   readonly turns: (ScriptedTurn | "indisponible")[] = [];
   #nextId = 1;
@@ -19,7 +20,7 @@ export class ScriptedAi implements Ai {
     this.requests.push(request);
     const next = this.replies.shift();
     if (!next || next === "indisponible") throw new AiUnavailableError("aucun modèle");
-    const content = JSON.stringify(next);
+    const content = typeof next === "string" ? next : JSON.stringify(next);
     if (request.accept && !request.accept(content)) throw new AiUnavailableError("réponse refusée");
     return { content, provider: "faux", model: "faux" };
   }

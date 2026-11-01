@@ -49,6 +49,7 @@ export async function buildApp(options: AppOptions) {
     storage: options.storage ?? new MemoryStorage(),
     log: app.log,
     onMemberMessage: () => {},
+    summarize: async () => null,
     kitchen: { onMachineStatus() {}, onToolResult() {}, onConnectionClosed() {} },
   };
   const ai = options.ai ?? new AiClient(ctx);
@@ -58,8 +59,10 @@ export async function buildApp(options: AppOptions) {
   else app.log.warn("Cuisinier désactivé : aucune clé d'IA configurée pour lui.");
   const serveurChain = options.serveurChain ?? [];
   const serveur = serveurChain.length > 0 ? new ServeurAgent(ctx, ai, serveurChain, kitchen) : null;
-  if (serveur) ctx.onMemberMessage = (message, teamId) => void serveur.onMemberMessage(message, teamId);
-  else app.log.warn("Agent serveur désactivé : aucune clé d'IA configurée.");
+  if (serveur) {
+    ctx.onMemberMessage = (message, teamId) => void serveur.onMemberMessage(message, teamId);
+    ctx.summarize = (request) => serveur.summarize(request);
+  } else app.log.warn("Agent serveur désactivé : aucune clé d'IA configurée.");
 
   registerErrorHandler(app);
   await app.register(websocket);
