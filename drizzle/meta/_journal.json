@@ -78,6 +78,13 @@
       "when": 1793530156817,
       "tag": "0010_suspension",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793534290495,
+      "tag": "0011_comptes_administrateurs",
+      "breakpoints": true
     }
   ]
 }

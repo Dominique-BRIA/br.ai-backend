@@ -9,6 +9,7 @@ import type { AppContext } from "../context.ts";
 import { betaInvites, promoCodes } from "../db/schema.ts";
 import { HttpError, parse } from "../http/errors.ts";
 import { createPromoCodes, toPromoCode } from "../services/promo.ts";
+import { adminAccountRoutes, findAdminSession } from "./adminAuth.ts";
 import { dashboardRoutes } from "./dashboard.ts";
 
 const createBetaInviteBody = z.object({
@@ -28,11 +29,17 @@ export function adminRoutes(
   chains: { serveur: ModelChoice[]; cuisinier: ModelChoice[] } = { serveur: [], cuisinier: [] },
 ): void {
   app.addHook("preHandler", async (request) => {
+    // Une session ouverte par un compte de l'équipe interne (tableau de bord)…
+    const session = request.headers["x-admin-session"];
+    if (typeof session === "string" && session && (await findAdminSession(ctx, session))) return;
+    // … ou le jeton d'administration du serveur (scripts, premier compte).
     const given = request.headers["x-admin-token"];
     if (!adminToken || typeof given !== "string" || !sameSecret(given, adminToken)) {
       throw new HttpError(401, "unauthenticated", "Accès réservé à l'équipe interne.");
     }
   });
+
+  adminAccountRoutes(app, ctx);
 
   dashboardRoutes(app, ctx, chains);
 

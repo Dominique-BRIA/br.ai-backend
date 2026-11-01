@@ -11,6 +11,7 @@ import { registerErrorHandler } from "./http/errors.ts";
 import { LogMailer, type Mailer } from "./mail/mailer.ts";
 import { RealtimeHub } from "./realtime/hub.ts";
 import { adminRoutes } from "./routes/admin.ts";
+import { adminAuthRoutes } from "./routes/adminAuth.ts";
 import { attachmentRoutes } from "./routes/attachments.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { meRoutes } from "./routes/me.ts";
@@ -96,6 +97,7 @@ export async function buildApp(options: AppOptions) {
   });
 
   await app.register(async (scope) => authRoutes(scope, ctx));
+  await app.register(async (scope) => adminAuthRoutes(scope, ctx));
   await app.register(async (scope) => {
     requireAuth(scope, ctx);
     teamRoutes(scope, ctx);

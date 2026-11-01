@@ -437,3 +437,31 @@ export const promoRedemptions = pgTable(
   },
   (t) => [index().on(t.codeId), index().on(t.teamId)],
 );
+
+/** Comptes de l'équipe interne, pour le tableau de bord d'administration. */
+export const adminAccounts = pgTable("admin_accounts", {
+  id: uuid().primaryKey().defaultRandom(),
+  email: text().notNull().unique(),
+  name: text().notNull(),
+  /** Empreinte scrypt du mot de passe ; jamais le mot de passe lui-même. */
+  passwordHash: text().notNull(),
+  lastLoginAt: timestamp({ withTimezone: true }),
+  disabledAt: timestamp({ withTimezone: true }),
+  createdAt: createdAt(),
+});
+
+/** Sessions du tableau de bord : seule l'empreinte du jeton est gardée. */
+export const adminSessions = pgTable(
+  "admin_sessions",
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    adminId: uuid()
+      .notNull()
+      .references(() => adminAccounts.id, { onDelete: "cascade" }),
+    tokenHash: text().notNull().unique(),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    revokedAt: timestamp({ withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (t) => [index().on(t.adminId)],
+);

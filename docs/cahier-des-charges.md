@@ -13,14 +13,14 @@ Chaque exigence porte un identifiant (`F-CPT-01`, etc.) et une priorité :
 
 ## 1. Acteurs
 
-| Acteur              | Description                                                                             |
-| ------------------- | --------------------------------------------------------------------------------------- |
-| **Visiteur**        | Consulte le site de présentation.                                                       |
-| **Membre**          | Personne inscrite, membre d'une ou plusieurs équipes.                                   |
-| **Chef d'équipe**   | Membre qui dirige une équipe. Il y en a un seul par équipe.                             |
+| Acteur              | Description                                                                           |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| **Visiteur**        | Consulte le site de présentation.                                                     |
+| **Membre**          | Personne inscrite, membre d'une ou plusieurs équipes.                                 |
+| **Chef d'équipe**   | Membre qui dirige une équipe. Il y en a un seul par équipe.                           |
 | **Administrateur**  | Membre de l'équipe interne de \<br/\>. Il accède au tableau de bord d'administration. |
-| **Agent serveur**   | Agent IA qui écoute le chat, note, synthétise, arbitre et passe les commandes.          |
-| **Agent cuisinier** | Agent IA qui produit les livrables sur la machine d'un membre.                          |
+| **Agent serveur**   | Agent IA qui écoute le chat, note, synthétise, arbitre et passe les commandes.        |
+| **Agent cuisinier** | Agent IA qui produit les livrables sur la machine d'un membre.                        |
 
 ## 2. Vocabulaire
 
@@ -55,15 +55,15 @@ Chaque exigence porte un identifiant (`F-CPT-01`, etc.) et une priorité :
 
 ### 3.2 Équipes et projets
 
-| ID       | Exigence                                                                                                                      | Priorité |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------- | -------- |
-| F-EQP-01 | Créer une équipe. Son créateur en devient le chef.                                                                            | Bêta     |
-| F-EQP-02 | Le chef invite des membres par lien ou par e-mail.                                                                            | Bêta     |
+| ID       | Exigence                                                                                                                    | Priorité |
+| -------- | --------------------------------------------------------------------------------------------------------------------------- | -------- |
+| F-EQP-01 | Créer une équipe. Son créateur en devient le chef.                                                                          | Bêta     |
+| F-EQP-02 | Le chef invite des membres par lien ou par e-mail.                                                                          | Bêta     |
 | F-EQP-03 | Le chef retire un membre. \<br/\> lui rappelle alors de changer les secrets auxquels ce membre avait accès (voir F-SEC-08). | Bêta     |
-| F-EQP-04 | Le chef transmet son rôle à un autre membre.                                                                                  | Bêta     |
-| F-EQP-05 | Un membre quitte une équipe. Le chef ne peut pas partir sans avoir transmis son rôle.                                         | Bêta     |
-| F-EQP-06 | Créer, renommer et archiver des projets dans une équipe.                                                                      | Bêta     |
-| F-EQP-07 | Le nombre de membres et de projets respecte les limites de la formule de l'équipe.                                            | Bêta     |
+| F-EQP-04 | Le chef transmet son rôle à un autre membre.                                                                                | Bêta     |
+| F-EQP-05 | Un membre quitte une équipe. Le chef ne peut pas partir sans avoir transmis son rôle.                                       | Bêta     |
+| F-EQP-06 | Créer, renommer et archiver des projets dans une équipe.                                                                    | Bêta     |
+| F-EQP-07 | Le nombre de membres et de projets respecte les limites de la formule de l'équipe.                                          | Bêta     |
 
 ### 3.3 Le chat
 
@@ -181,18 +181,18 @@ Le cuisinier tourne sur les serveurs de \<br/\> (la boucle d'IA), mais **toutes 
 
 ### 3.8 GitHub
 
-| ID       | Exigence                                                                                                                                                                                                                                                                                                                                                                                                                              | Priorité |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
-| F-GIT-01 | Par défaut, chaque membre passe par sa propre connexion GitHub dans VS Code et par Git sur sa machine : branches, commits et pushes à son nom, pull requests et fusions par l'API de GitHub avec son accès. Aucune installation n'est exigée.                                                                                                                                                                                         | Bêta     |
-| F-GIT-02 | Le chef branche le dépôt au projet depuis le chat.                                                                                                                                                                                                                                                                                                                                                                                    | Bêta     |
+| ID       | Exigence                                                                                                                                                                                                                                                                                                                                                                                                                          | Priorité |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
+| F-GIT-01 | Par défaut, chaque membre passe par sa propre connexion GitHub dans VS Code et par Git sur sa machine : branches, commits et pushes à son nom, pull requests et fusions par l'API de GitHub avec son accès. Aucune installation n'est exigée.                                                                                                                                                                                     | Bêta     |
+| F-GIT-02 | Le chef branche le dépôt au projet depuis le chat.                                                                                                                                                                                                                                                                                                                                                                                | Bêta     |
 | F-GIT-10 | L'application GitHub \<br/\> est facultative. Quand le chef (celui qui a créé le dépôt) branche le dépôt, \<br/\> lui propose de l'installer en expliquant brièvement ses avantages : le serveur crée et fusionne les pull requests même quand aucune machine n'est allumée, et il est prévenu des fusions faites directement sur GitHub. Le chef accepte ou refuse ; sans elle, tout fonctionne avec les connexions des membres. | Bêta     |
-| F-GIT-03 | Chaque commande travaille sur sa propre branche : `bria/<numéro>-<titre-court>`.                                                                                                                                                                                                                                                                                                                                                      | Bêta     |
-| F-GIT-04 | À la fin d'une tâche testée, le cuisinier pousse la branche, selon la préférence du membre (automatiquement, ou après sa validation).                                                                                                                                                                                                                                                                                                 | Bêta     |
-| F-GIT-05 | Le demandeur valide le résultat. La branche est alors fusionnée dans la branche principale, par une pull request.                                                                                                                                                                                                                                                                                                                     | Bêta     |
-| F-GIT-06 | Après la fusion, les autres membres reçoivent une notification « nouvelle version disponible ».                                                                                                                                                                                                                                                                                                                                       | Bêta     |
-| F-GIT-07 | Si le membre accepte, le cuisinier récupère la nouvelle version sur sa machine. Il vérifie d'abord qu'il n'y a pas de travail non enregistré ; s'il y en a, il demande quoi faire.                                                                                                                                                                                                                                                    | Bêta     |
-| F-GIT-08 | Après la récupération, il installe les nouvelles dépendances si besoin.                                                                                                                                                                                                                                                                                                                                                               | Bêta     |
-| F-GIT-09 | Les commits du cuisinier sont signés au nom du membre, sans mention de l'IA comme co-auteur.                                                                                                                                                                                                                                                                                                                                          | Bêta     |
+| F-GIT-03 | Chaque commande travaille sur sa propre branche : `bria/<numéro>-<titre-court>`.                                                                                                                                                                                                                                                                                                                                                  | Bêta     |
+| F-GIT-04 | À la fin d'une tâche testée, le cuisinier pousse la branche, selon la préférence du membre (automatiquement, ou après sa validation).                                                                                                                                                                                                                                                                                             | Bêta     |
+| F-GIT-05 | Le demandeur valide le résultat. La branche est alors fusionnée dans la branche principale, par une pull request.                                                                                                                                                                                                                                                                                                                 | Bêta     |
+| F-GIT-06 | Après la fusion, les autres membres reçoivent une notification « nouvelle version disponible ».                                                                                                                                                                                                                                                                                                                                   | Bêta     |
+| F-GIT-07 | Si le membre accepte, le cuisinier récupère la nouvelle version sur sa machine. Il vérifie d'abord qu'il n'y a pas de travail non enregistré ; s'il y en a, il demande quoi faire.                                                                                                                                                                                                                                                | Bêta     |
+| F-GIT-08 | Après la récupération, il installe les nouvelles dépendances si besoin.                                                                                                                                                                                                                                                                                                                                                           | Bêta     |
+| F-GIT-09 | Les commits du cuisinier sont signés au nom du membre, sans mention de l'IA comme co-auteur.                                                                                                                                                                                                                                                                                                                                      | Bêta     |
 
 ### 3.9 Le relais entre machines
 
@@ -215,7 +215,7 @@ Le cuisinier tourne sur les serveurs de \<br/\> (la boucle d'IA), mais **toutes 
 | F-SEC-05 | **L'IA ne voit jamais la valeur d'un secret.** Elle connaît seulement son nom.                                                                                     | Bêta      |
 | F-SEC-06 | L'extension remplace toute valeur secrète par `****` dans les résultats de commandes avant de les envoyer à l'IA.                                                  | Bêta      |
 | F-SEC-07 | Un journal enregistre qui a récupéré quel secret, et quand. Le chef le consulte.                                                                                   | Bêta      |
-| F-SEC-08 | Quand un membre quitte l'équipe, \<br/\> rappelle au chef de changer les secrets auxquels il avait accès.                                                        | Bêta      |
+| F-SEC-08 | Quand un membre quitte l'équipe, \<br/\> rappelle au chef de changer les secrets auxquels il avait accès.                                                          | Bêta      |
 | F-SEC-09 | Séparer les secrets de test et de production.                                                                                                                      | Plus tard |
 
 ### 3.11 Crédits et quotas
@@ -314,11 +314,11 @@ Sur le site, réservé aux administrateurs.
 
 ### 4.3 Confidentialité
 
-| ID        | Exigence                                                                                                                                             |
-| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ID        | Exigence                                                                                                                                           |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
 | NF-CNF-01 | Le serveur de \<br/\> stocke les conversations, la mémoire du projet et les métadonnées. Le code reste sur GitHub et sur les machines des membres. |
-| NF-CNF-02 | Les testeurs sont prévenus, à l'inscription, que certaines IA gratuites utilisent les échanges pour leur entraînement.                               |
-| NF-CNF-03 | Un membre peut exporter ses données.                                                                                                                 |
+| NF-CNF-02 | Les testeurs sont prévenus, à l'inscription, que certaines IA gratuites utilisent les échanges pour leur entraînement.                             |
+| NF-CNF-03 | Un membre peut exporter ses données.                                                                                                               |
 
 ### 4.4 Compatibilité
 
