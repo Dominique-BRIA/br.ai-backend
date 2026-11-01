@@ -44,12 +44,33 @@ describe("comptes de l'équipe interne", () => {
     expect(json.admin).toEqual({ email: "dominique@exemple.org", name: "Dominique" });
 
     expect((await withSession("/admin/overview", json.token)).statusCode).toBe(200);
-    expect((await withSession("/admin-auth/me", json.token)).json()).toEqual({
+    expect((await withSession("/admin-auth/me", json.token)).json()).toMatchObject({
       admin: { email: "dominique@exemple.org", name: "Dominique" },
     });
 
     await withSession("/admin-auth/logout", json.token, "POST");
     expect((await withSession("/admin/overview", json.token)).statusCode).toBe(401);
+  });
+
+  it("change son mot de passe et ferme ses autres sessions", async () => {
+    const other = (await login("dominique@exemple.org", "un mot de passe solide")).json.token;
+    const current = (await login("dominique@exemple.org", "un mot de passe solide")).json.token;
+    const change = (currentPassword: string, newPassword: string) =>
+      t.app.inject({
+        method: "POST",
+        url: "/admin-auth/password",
+        headers: { "x-admin-session": current },
+        payload: { currentPassword, newPassword },
+      });
+
+    expect((await change("faux", "nouveau mot de passe solide")).statusCode).toBe(403);
+    expect((await change("un mot de passe solide", "court")).statusCode).toBe(400);
+    expect((await change("un mot de passe solide", "nouveau mot de passe solide")).statusCode).toBe(200);
+    expect((await withSession("/admin/overview", other)).statusCode).toBe(401);
+    expect((await withSession("/admin/overview", current)).statusCode).toBe(200);
+    expect((await login("dominique@exemple.org", "nouveau mot de passe solide")).status).toBe(200);
+
+    expect((await change("nouveau mot de passe solide", "un mot de passe solide")).statusCode).toBe(200);
   });
 
   it("refuse un compte désactivé et bloque après trop d'échecs", async () => {
@@ -65,6 +86,22 @@ describe("comptes de l'équipe interne", () => {
     await t.call("PATCH", `/admin/admins/${ali?.id}`, { admin: true, body: { disabled: true } });
     expect((await withSession("/admin/overview", session)).statusCode).toBe(401);
     expect((await login("ali@exemple.org", "un autre mot de passe")).status).toBe(401);
+
+    const dominique = json.admins.find((admin) => admin.email === "dominique@exemple.org");
+    const own = (await login("dominique@exemple.org", "un mot de passe solide")).json.token;
+    const selfDisable = await t.app.inject({
+      method: "PATCH",
+      url: `/admin/admins/${dominique?.id}`,
+      headers: { "x-admin-session": own },
+      payload: { disabled: true },
+    });
+    expect(selfDisable.statusCode).toBe(409);
+    // Ali étant désactivé, Dominique est le dernier compte actif.
+    const last = await t.call("PATCH", `/admin/admins/${dominique?.id}`, {
+      admin: true,
+      body: { disabled: true },
+    });
+    expect(last.status).toBe(409);
 
     for (let attempt = 0; attempt < 5; attempt++) await login("dominique@exemple.org", "mauvais");
     const blocked = await login("dominique@exemple.org", "un mot de passe solide");

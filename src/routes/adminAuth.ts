@@ -1,4 +1,4 @@
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, ne } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { hashPassword, verifyPassword } from "../auth/passwords.ts";
@@ -28,6 +28,11 @@ export const newAdminBody = z.object({
     .transform((value) => value.trim().toLowerCase()),
   name: z.string().trim().min(1).max(80),
   password: z.string().min(12, "Au moins 12 caractères.").max(200),
+});
+
+const changePasswordBody = z.object({
+  currentPassword: z.string().min(1).max(200),
+  newPassword: newAdminBody.shape.password,
 });
 
 /** Session du tableau de bord valable pour ce jeton, avec son compte ; `null` sinon. */
@@ -97,7 +102,34 @@ export function adminAuthRoutes(app: FastifyInstance, ctx: AppContext): void {
     const token = sessionToken(request);
     const session = token ? await findAdminSession(ctx, token) : null;
     if (!session) throw new HttpError(401, "unauthenticated", "Connexion requise.");
-    return { admin: { email: session.email, name: session.name } };
+    return { admin: { id: session.adminId, email: session.email, name: session.name } };
+  });
+
+  /** Change son mot de passe ; les autres sessions du compte sont fermées. */
+  app.post("/admin-auth/password", async (request) => {
+    const token = sessionToken(request);
+    const session = token ? await findAdminSession(ctx, token) : null;
+    if (!session) throw new HttpError(401, "unauthenticated", "Connexion requise.");
+    const { currentPassword, newPassword } = parse(changePasswordBody, request.body);
+    const [account] = await ctx.db.select().from(adminAccounts).where(eq(adminAccounts.id, session.adminId));
+    if (!account || !(await verifyPassword(currentPassword, account.passwordHash))) {
+      throw new HttpError(403, "forbidden", "Le mot de passe actuel est incorrect.");
+    }
+    await ctx.db
+      .update(adminAccounts)
+      .set({ passwordHash: await hashPassword(newPassword) })
+      .where(eq(adminAccounts.id, account.id));
+    await ctx.db
+      .update(adminSessions)
+      .set({ revokedAt: new Date() })
+      .where(
+        and(
+          eq(adminSessions.adminId, account.id),
+          isNull(adminSessions.revokedAt),
+          ne(adminSessions.id, session.sessionId),
+        ),
+      );
+    return { ok: true };
   });
 
   app.post("/admin-auth/logout", async (request, reply) => {
@@ -156,6 +188,21 @@ export function adminAccountRoutes(app: FastifyInstance, ctx: AppContext): void 
   app.patch("/admin/admins/:id", async (request) => {
     const { id } = parse(z.object({ id: z.uuid() }), request.params);
     const { disabled } = parse(z.object({ disabled: z.boolean() }), request.body);
+    if (disabled) {
+      // Personne ne doit pouvoir se fermer la porte : ni sur son propre compte, ni sur le dernier actif.
+      const token = request.headers["x-admin-session"];
+      const self = typeof token === "string" && token ? await findAdminSession(ctx, token) : null;
+      if (self?.adminId === id) {
+        throw new HttpError(409, "forbidden", "Vous ne pouvez pas désactiver votre propre compte.");
+      }
+      const active = await ctx.db
+        .select({ id: adminAccounts.id })
+        .from(adminAccounts)
+        .where(isNull(adminAccounts.disabledAt));
+      if (active.length === 1 && active[0]?.id === id) {
+        throw new HttpError(409, "forbidden", "C'est le dernier compte actif : il doit le rester.");
+      }
+    }
     const [row] = await ctx.db
       .update(adminAccounts)
       .set({ disabledAt: disabled ? new Date() : null })
