@@ -1,7 +1,7 @@
 {
   "name": "@br-ia/protocol",
   "version": "0.1.0",
-  "description": "Protocole partagé entre le serveur, l'extension et le site <br>.ia",
+  "description": "Protocole partagé entre le serveur, l'extension et le site <br/>",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

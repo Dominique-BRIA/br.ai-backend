@@ -1,6 +1,6 @@
-# \<br\>.ia — serveur
+# \<br/\> — serveur
 
-Serveur de \<br\>.ia : API HTTP, connexions WebSocket avec les extensions, agents IA et base de données.
+Serveur de \<br/\> : API HTTP, connexions WebSocket avec les extensions, agents IA et base de données.
 
 La vision, le cahier des charges et la charte des interfaces sont dans [`docs/`](docs/).
 

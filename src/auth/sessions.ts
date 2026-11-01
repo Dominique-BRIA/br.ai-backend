@@ -56,7 +56,7 @@ export function requireAuth(app: FastifyInstance, ctx: AppContext): void {
     if (!session) throw new HttpError(401, "unauthenticated", "Connexion requise.");
     // Pendant une maintenance, seuls les comptes en exception gardent l'accès.
     if (await blockedByMaintenance(ctx, session.email)) {
-      throw new HttpError(503, "maintenance", "<br>.ia est en maintenance. Réessayez plus tard.");
+      throw new HttpError(503, "maintenance", "<br/> est en maintenance. Réessayez plus tard.");
     }
     request.userId = session.userId;
     request.sessionId = session.id;

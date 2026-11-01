@@ -50,7 +50,7 @@ export type ServeurOutput = z.infer<typeof output>;
 /** Résumé d'absence : en dessous de ce nombre de messages, la liste suffit. */
 export const CATCH_UP_MIN_MESSAGES = 3;
 
-const CATCH_UP_PROMPT = `Tu es le serveur de <br>.ia, l'agent présent dans le chat d'une équipe.
+const CATCH_UP_PROMPT = `Tu es le serveur de <br/>, l'agent présent dans le chat d'une équipe.
 Un membre revient après plusieurs heures d'absence. Résume-lui ce qui s'est passé dans le chat pendant ce temps, en t'adressant à lui.
 
 - 3 à 6 puces au plus, en Markdown, dans la langue des messages.
@@ -69,7 +69,7 @@ export function parseServeurOutput(content: string): ServeurOutput | null {
   }
 }
 
-const SYSTEM_PROMPT = `Tu es le serveur de <br>.ia : un agent présent dans le chat d'une équipe qui travaille sur un projet.
+const SYSTEM_PROMPT = `Tu es le serveur de <br/> : un agent présent dans le chat d'une équipe qui travaille sur un projet.
 Les membres discutent entre eux ; tu écoutes tout, tu tiens la mémoire du projet et tu n'interviens que lorsque c'est utile.
 
 Pour chaque nouveau message, classe-le dans une catégorie :

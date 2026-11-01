@@ -14,7 +14,7 @@ import { sessions } from "../db/schema.ts";
 import type { LiveConnection } from "../realtime/hub.ts";
 import { teammateIds } from "../services/access.ts";
 
-/** Codes de fermeture WebSocket propres à <br>.ia (plage 4000-4999 réservée aux applications). */
+/** Codes de fermeture WebSocket propres à <br/> (plage 4000-4999 réservée aux applications). */
 export const CLOSE_CODES = {
   unauthenticated: 4401,
   protocolError: 4400,

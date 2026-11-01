@@ -4,15 +4,15 @@ import type { Mail } from "./mailer.ts";
 /*
  * Modèles d'e-mails. Le HTML reste simple et entièrement en styles en ligne,
  * pour s'afficher correctement dans Gmail, Outlook et les applications mobiles.
- * Couleurs de la charte des interfaces : le turquoise du logo et des gris neutres.
- * Le nom « <br>.ia » contient des chevrons : il est échappé dans le HTML.
+ * Couleurs de la charte des interfaces : le bleu du logo et des gris neutres.
+ * Le nom « <br/> » contient des chevrons : il est échappé dans le HTML.
  */
 
-const BRAND = "<br>.ia";
-const BRAND_HTML = "&lt;br&gt;.ia";
+const BRAND = "<br/>";
+const BRAND_HTML = "&lt;br/&gt;";
 
 const COLORS = {
-  brand: "#0b7d89",
+  brand: "#1860a0",
   page: "#f6f4f2",
   card: "#ffffff",
   text: "#2b2724",
@@ -30,7 +30,7 @@ const TEXTS = {
     validity: "Il est valable 10 minutes.",
     ignore:
       "Si vous n'avez rien demandé, ignorez simplement cet e-mail : personne ne pourra se connecter sans ce code.",
-    footer: (brand: string) => `${brand} · plateforme collaborative, IA conductrice`,
+    footer: (brand: string) => `${brand} · redonner un sens au travail d'équipe`,
   },
   en: {
     subject: (code: string) => `Your ${BRAND} sign-in code: ${code}`,
@@ -39,7 +39,7 @@ const TEXTS = {
     intro: (brand: string) => `Enter this code in VS Code to sign in to ${brand}.`,
     validity: "It is valid for 10 minutes.",
     ignore: "If you did not ask for it, simply ignore this email: nobody can sign in without this code.",
-    footer: (brand: string) => `${brand} · collaborative platform, AI as conductor`,
+    footer: (brand: string) => `${brand} · giving meaning back to teamwork`,
   },
 } satisfies Record<Locale, unknown>;
 

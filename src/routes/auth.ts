@@ -29,7 +29,7 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext): void {
       .from(users)
       .where(eq(users.email, email));
     if (existing?.suspendedAt) {
-      throw new HttpError(403, "account_suspended", "Ce compte est suspendu. Contactez l'équipe de <br>.ia.");
+      throw new HttpError(403, "account_suspended", "Ce compte est suspendu. Contactez l'équipe de <br/>.");
     }
 
     let invitation: Invitation | null = null;

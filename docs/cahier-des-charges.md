@@ -1,8 +1,8 @@
-# \<br\>.ia — Cahier des charges
+# \<br/\> — Cahier des charges
 
 _Version 1, 31 octobre 2026. Auteur : Dominique Bria._
 
-Ce document décrit ce que \<br\>.ia doit faire pour la **bêta privée** (étapes 1 et 2 du [document de vision](vision.md)) : tout sauf le paiement. Le contexte, le concept et le modèle économique sont dans le document de vision. Ici, on décrit ce qu'il faut construire.
+Ce document décrit ce que \<br/\> doit faire pour la **bêta privée** (étapes 1 et 2 du [document de vision](vision.md)) : tout sauf le paiement. Le contexte, le concept et le modèle économique sont dans le document de vision. Ici, on décrit ce qu'il faut construire.
 
 Chaque exigence porte un identifiant (`F-CPT-01`, etc.) et une priorité :
 
@@ -18,7 +18,7 @@ Chaque exigence porte un identifiant (`F-CPT-01`, etc.) et une priorité :
 | **Visiteur**        | Consulte le site de présentation.                                                       |
 | **Membre**          | Personne inscrite, membre d'une ou plusieurs équipes.                                   |
 | **Chef d'équipe**   | Membre qui dirige une équipe. Il y en a un seul par équipe.                             |
-| **Administrateur**  | Membre de l'équipe interne de \<br\>.ia. Il accède au tableau de bord d'administration. |
+| **Administrateur**  | Membre de l'équipe interne de \<br/\>. Il accède au tableau de bord d'administration. |
 | **Agent serveur**   | Agent IA qui écoute le chat, note, synthétise, arbitre et passe les commandes.          |
 | **Agent cuisinier** | Agent IA qui produit les livrables sur la machine d'un membre.                          |
 
@@ -59,7 +59,7 @@ Chaque exigence porte un identifiant (`F-CPT-01`, etc.) et une priorité :
 | -------- | ----------------------------------------------------------------------------------------------------------------------------- | -------- |
 | F-EQP-01 | Créer une équipe. Son créateur en devient le chef.                                                                            | Bêta     |
 | F-EQP-02 | Le chef invite des membres par lien ou par e-mail.                                                                            | Bêta     |
-| F-EQP-03 | Le chef retire un membre. \<br\>.ia lui rappelle alors de changer les secrets auxquels ce membre avait accès (voir F-SEC-08). | Bêta     |
+| F-EQP-03 | Le chef retire un membre. \<br/\> lui rappelle alors de changer les secrets auxquels ce membre avait accès (voir F-SEC-08). | Bêta     |
 | F-EQP-04 | Le chef transmet son rôle à un autre membre.                                                                                  | Bêta     |
 | F-EQP-05 | Un membre quitte une équipe. Le chef ne peut pas partir sans avoir transmis son rôle.                                         | Bêta     |
 | F-EQP-06 | Créer, renommer et archiver des projets dans une équipe.                                                                      | Bêta     |
@@ -127,7 +127,7 @@ Chaque exigence porte un identifiant (`F-CPT-01`, etc.) et une priorité :
 
 ### 3.6 L'agent cuisinier et ses outils
 
-Le cuisinier tourne sur les serveurs de \<br\>.ia (la boucle d'IA), mais **toutes ses actions s'exécutent sur la machine du membre**, à travers l'extension.
+Le cuisinier tourne sur les serveurs de \<br/\> (la boucle d'IA), mais **toutes ses actions s'exécutent sur la machine du membre**, à travers l'extension.
 
 | ID       | Exigence                                                                                                                                                                             | Priorité |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------- |
@@ -185,7 +185,7 @@ Le cuisinier tourne sur les serveurs de \<br\>.ia (la boucle d'IA), mais **toute
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- |
 | F-GIT-01 | Par défaut, chaque membre passe par sa propre connexion GitHub dans VS Code et par Git sur sa machine : branches, commits et pushes à son nom, pull requests et fusions par l'API de GitHub avec son accès. Aucune installation n'est exigée.                                                                                                                                                                                         | Bêta     |
 | F-GIT-02 | Le chef branche le dépôt au projet depuis le chat.                                                                                                                                                                                                                                                                                                                                                                                    | Bêta     |
-| F-GIT-10 | L'application GitHub \<br\>.ia est facultative. Quand le chef (celui qui a créé le dépôt) branche le dépôt, \<br\>.ia lui propose de l'installer en expliquant brièvement ses avantages : le serveur crée et fusionne les pull requests même quand aucune machine n'est allumée, et il est prévenu des fusions faites directement sur GitHub. Le chef accepte ou refuse ; sans elle, tout fonctionne avec les connexions des membres. | Bêta     |
+| F-GIT-10 | L'application GitHub \<br/\> est facultative. Quand le chef (celui qui a créé le dépôt) branche le dépôt, \<br/\> lui propose de l'installer en expliquant brièvement ses avantages : le serveur crée et fusionne les pull requests même quand aucune machine n'est allumée, et il est prévenu des fusions faites directement sur GitHub. Le chef accepte ou refuse ; sans elle, tout fonctionne avec les connexions des membres. | Bêta     |
 | F-GIT-03 | Chaque commande travaille sur sa propre branche : `bria/<numéro>-<titre-court>`.                                                                                                                                                                                                                                                                                                                                                      | Bêta     |
 | F-GIT-04 | À la fin d'une tâche testée, le cuisinier pousse la branche, selon la préférence du membre (automatiquement, ou après sa validation).                                                                                                                                                                                                                                                                                                 | Bêta     |
 | F-GIT-05 | Le demandeur valide le résultat. La branche est alors fusionnée dans la branche principale, par une pull request.                                                                                                                                                                                                                                                                                                                     | Bêta     |
@@ -215,7 +215,7 @@ Le cuisinier tourne sur les serveurs de \<br\>.ia (la boucle d'IA), mais **toute
 | F-SEC-05 | **L'IA ne voit jamais la valeur d'un secret.** Elle connaît seulement son nom.                                                                                     | Bêta      |
 | F-SEC-06 | L'extension remplace toute valeur secrète par `****` dans les résultats de commandes avant de les envoyer à l'IA.                                                  | Bêta      |
 | F-SEC-07 | Un journal enregistre qui a récupéré quel secret, et quand. Le chef le consulte.                                                                                   | Bêta      |
-| F-SEC-08 | Quand un membre quitte l'équipe, \<br\>.ia rappelle au chef de changer les secrets auxquels il avait accès.                                                        | Bêta      |
+| F-SEC-08 | Quand un membre quitte l'équipe, \<br/\> rappelle au chef de changer les secrets auxquels il avait accès.                                                        | Bêta      |
 | F-SEC-09 | Séparer les secrets de test et de production.                                                                                                                      | Plus tard |
 
 ### 3.11 Crédits et quotas
@@ -316,7 +316,7 @@ Sur le site, réservé aux administrateurs.
 
 | ID        | Exigence                                                                                                                                             |
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| NF-CNF-01 | Le serveur de \<br\>.ia stocke les conversations, la mémoire du projet et les métadonnées. Le code reste sur GitHub et sur les machines des membres. |
+| NF-CNF-01 | Le serveur de \<br/\> stocke les conversations, la mémoire du projet et les métadonnées. Le code reste sur GitHub et sur les machines des membres. |
 | NF-CNF-02 | Les testeurs sont prévenus, à l'inscription, que certaines IA gratuites utilisent les échanges pour leur entraînement.                               |
 | NF-CNF-03 | Un membre peut exporter ses données.                                                                                                                 |
 
@@ -343,7 +343,7 @@ Sur le site, réservé aux administrateurs.
 
 ```
 ┌──────────────────────────── Machine d'un membre ────────────────────────────┐
-│  VS Code + extension <br>.ia                                                  │
+│  VS Code + extension <br/>                                                  │
 │   ├─ panneau (webview React) : chat, mémoire, commandes                     │
 │   ├─ exécuteur d'outils : fichiers, commandes, Git, .env                    │
 │   └─ mémoire locale ~/.bria/                                                │
