@@ -164,7 +164,7 @@ describe("cuisinier", () => {
       token: chef.token,
       body: { repo },
     });
-    expect(linked.json.project.repo).toEqual(repo);
+    expect(linked.json.project.repo).toEqual({ ...repo, appConnected: false });
     const announced = (await history()).filter((message) => message.author.kind === "serveur").at(-1);
     expect(announced?.body).toContain("**dominique/site** est branché");
 

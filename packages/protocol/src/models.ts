@@ -29,6 +29,8 @@ export type Member = z.infer<typeof member>;
 
 /** Dépôt GitHub branché au projet : « propriétaire/nom » et sa branche principale. */
 export const projectRepo = z.object({
+  /** L'application GitHub de <br/> est connectée à ce dépôt pour ce projet. */
+  appConnected: z.boolean(),
   fullName: z.string(),
   defaultBranch: z.string(),
 });

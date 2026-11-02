@@ -251,7 +251,12 @@ export function teamRoutes(app: FastifyInstance, ctx: AppContext): void {
     await requireChef(ctx, request.userId, current.teamId);
     const [project] = await ctx.db
       .update(projects)
-      .set({ repoFullName: repo?.fullName ?? null, repoDefaultBranch: repo?.defaultBranch ?? null })
+      .set({
+        repoFullName: repo?.fullName ?? null,
+        repoDefaultBranch: repo?.defaultBranch ?? null,
+        // L'installation confirmée valait pour l'ancien dépôt.
+        ...(repo?.fullName !== current.repoFullName && { repoInstallationId: null }),
+      })
       .where(eq(projects.id, projectId))
       .returning(projectColumns);
     if (!project) throw notFound("Projet introuvable.");

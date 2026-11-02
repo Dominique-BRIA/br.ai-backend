@@ -40,6 +40,17 @@ const schema = z.object({
     .default(
       "gemini:gemini-3.6-flash,mistral:codestral-latest,groq:openai/gpt-oss-120b,gemini:gemini-3.5-flash,zai:glm-4.7-flash,zai:glm-4.5-flash",
     ),
+  /**
+   * Application GitHub de <br/>, facultative : toutes ces variables, ou aucune. La clé privée se
+   * donne par son contenu (les retours à la ligne écrits \\n) ou par le chemin de son fichier.
+   */
+  GITHUB_APP_ID: z.string().optional(),
+  GITHUB_APP_SLUG: z.string().optional(),
+  GITHUB_APP_CLIENT_ID: z.string().optional(),
+  GITHUB_APP_CLIENT_SECRET: z.string().optional(),
+  GITHUB_APP_PRIVATE_KEY: z.string().optional(),
+  GITHUB_APP_PRIVATE_KEY_PATH: z.string().optional(),
+  GITHUB_WEBHOOK_SECRET: z.string().optional(),
   /** Clé maîtresse du coffre de secrets : 32 octets en base64. Sans elle, le coffre est fermé. */
   SECRETS_KEY: z.string().optional(),
   /** Dossier des pièces jointes quand Backblaze B2 n'est pas configuré. */

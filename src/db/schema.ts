@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
+  bigint,
   boolean,
   doublePrecision,
   index,
@@ -158,6 +159,8 @@ export const projects = pgTable(
     /** Dépôt GitHub branché par le chef : « propriétaire/nom ». */
     repoFullName: text(),
     repoDefaultBranch: text(),
+    /** Installation de l'application GitHub, confirmée par un compte qui peut écrire dans le dépôt. */
+    repoInstallationId: bigint({ mode: "number" }),
     archivedAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
   },

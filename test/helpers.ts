@@ -34,7 +34,7 @@ export class MemoryMailer implements Mailer {
 }
 
 export async function startApp(
-  options: Pick<AppOptions, "ai" | "serveurChain" | "cuisinierChain" | "vault"> = {},
+  options: Pick<AppOptions, "ai" | "serveurChain" | "cuisinierChain" | "vault" | "githubApp"> = {},
 ) {
   const database = await openDatabase();
   const mailer = new MemoryMailer();

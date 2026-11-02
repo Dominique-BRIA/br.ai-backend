@@ -8,6 +8,7 @@ import { openDatabase, openPostgres } from "./db/client.ts";
 import { betaInvites } from "./db/schema.ts";
 import { ResendMailer } from "./mail/mailer.ts";
 import { Vault } from "./secrets/vault.ts";
+import { githubAppFrom } from "./services/githubApp.ts";
 import { B2Storage, DiskStorage } from "./storage/storage.ts";
 
 /** Code d'invitation créé automatiquement en développement, pour tester sans tableau de bord. */
@@ -51,6 +52,7 @@ const { app } = await buildApp({
   database,
   adminToken: config.ADMIN_TOKEN,
   vault: config.SECRETS_KEY ? new Vault(config.SECRETS_KEY) : null,
+  githubApp: githubAppFrom(config),
   mailer: config.RESEND_API_KEY ? new ResendMailer(config.RESEND_API_KEY, config.MAIL_FROM) : undefined,
   logger:
     config.NODE_ENV === "development"

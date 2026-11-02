@@ -50,6 +50,7 @@ export const apiErrorCode = z.enum([
   "already_invited",
   "mail_failed",
   "order_not_ready",
+  "github_failed",
 ]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 
@@ -155,6 +156,18 @@ export const orderPullRequestBody = z.object({
   merged: z.boolean(),
 });
 export type OrderPullRequestBody = z.input<typeof orderPullRequestBody>;
+
+/** Validation d'une commande : le serveur fusionne si l'application GitHub est connectée. */
+export type OrderValidateResponse =
+  | { viaServer: false }
+  | { viaServer: true; number: number; url: string; merged: boolean; reason: string | null };
+
+/** L'application GitHub, pour la proposer au chef quand il branche un dépôt. */
+export interface RepoAppStatus {
+  available: boolean;
+  connected: boolean;
+  installUrl: string | null;
+}
 
 // Messages
 

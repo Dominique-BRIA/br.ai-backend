@@ -8,6 +8,7 @@ export const projectColumns = {
   name: projects.name,
   repoFullName: projects.repoFullName,
   repoDefaultBranch: projects.repoDefaultBranch,
+  repoInstallationId: projects.repoInstallationId,
 };
 
 export function toProject(row: {
@@ -16,6 +17,7 @@ export function toProject(row: {
   name: string;
   repoFullName: string | null;
   repoDefaultBranch: string | null;
+  repoInstallationId: number | null;
 }): Project {
   return {
     id: row.id,
@@ -23,7 +25,11 @@ export function toProject(row: {
     name: row.name,
     repo:
       row.repoFullName && row.repoDefaultBranch
-        ? { fullName: row.repoFullName, defaultBranch: row.repoDefaultBranch }
+        ? {
+            fullName: row.repoFullName,
+            defaultBranch: row.repoDefaultBranch,
+            appConnected: row.repoInstallationId !== null,
+          }
         : null,
   };
 }

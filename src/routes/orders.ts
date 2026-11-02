@@ -1,5 +1,10 @@
-import { type Order, type OrdersResponse, orderPullRequestBody } from "@br-ia/protocol";
-import { eq } from "drizzle-orm";
+import {
+  type Order,
+  type OrdersResponse,
+  type OrderValidateResponse,
+  orderPullRequestBody,
+} from "@br-ia/protocol";
+import { and, eq, isNull } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Kitchen } from "../agents/cuisinier.ts";
@@ -7,12 +12,18 @@ import type { AppContext } from "../context.ts";
 import { orders, projects } from "../db/schema.ts";
 import { forbidden, HttpError, notFound, parse } from "../http/errors.ts";
 import { memberIds, requireProject, roleIn } from "../services/access.ts";
+import type { GitHubApp, ServerMerge } from "../services/githubApp.ts";
 import { postAgentMessage } from "../services/messages.ts";
 
 const projectParams = z.object({ projectId: z.uuid() });
 const orderParams = z.object({ orderId: z.uuid() });
 
-export function orderRoutes(app: FastifyInstance, ctx: AppContext, kitchen: Kitchen | null): void {
+export function orderRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  kitchen: Kitchen | null,
+  github: GitHubApp | null,
+): void {
   app.get("/projects/:projectId/orders", async (request): Promise<OrdersResponse> => {
     const { projectId } = parse(projectParams, request.params);
     await requireProject(ctx, request.userId, projectId);
@@ -79,6 +90,7 @@ export function orderRoutes(app: FastifyInstance, ctx: AppContext, kitchen: Kitc
         teamId: projects.teamId,
         repoFullName: projects.repoFullName,
         repoDefaultBranch: projects.repoDefaultBranch,
+        repoInstallationId: projects.repoInstallationId,
       })
       .from(orders)
       .innerJoin(projects, eq(projects.id, orders.projectId))
@@ -115,28 +127,105 @@ export function orderRoutes(app: FastifyInstance, ctx: AppContext, kitchen: Kitc
     if (!row.repoFullName) {
       throw new HttpError(409, "order_not_ready", "Ce projet n'a plus de dépôt GitHub.");
     }
-    if (row.order.mergedAt !== null) {
-      const order = (await row.kitchen.list(row.order.projectId)).find((item) => item.id === orderId);
-      if (!order) throw notFound("Commande introuvable.");
-      return { order };
-    }
-    const url = `https://github.com/${row.repoFullName}/pull/${body.number}`;
-    const order = await row.kitchen.recordGit(orderId, row.teamId, {
-      pullRequestNumber: body.number,
-      pullRequestUrl: url,
-      ...(body.merged ? { mergedAt: new Date() } : {}),
-    });
-    if (body.merged) {
-      const others = (await memberIds(ctx, row.teamId)).filter((id) => id !== request.userId);
-      await postAgentMessage(ctx, {
-        projectId: row.order.projectId,
+    return {
+      order: await recordOrderPullRequest(ctx, row.kitchen, {
+        order: row.order,
         teamId: row.teamId,
-        kind: "serveur",
-        body: `La commande n° ${row.order.number} « ${row.order.title} » est validée et fusionnée dans \`${row.repoDefaultBranch}\` : [pull request n° ${body.number}](${url}). Une nouvelle version est disponible.`,
-        // Les membres absents le verront dans leurs notifications (F-GIT-06).
-        mentions: others,
-      });
-    }
-    return { order };
+        repoFullName: row.repoFullName,
+        repoDefaultBranch: row.repoDefaultBranch,
+        number: body.number,
+        merged: body.merged,
+        byUserId: request.userId,
+      }),
+    };
   });
+
+  /**
+   * Le demandeur valide. Si l'application GitHub est connectée, le serveur fusionne lui-même ;
+   * sinon la réponse demande à la machine du membre de le faire avec son accès.
+   */
+  app.post("/orders/:orderId/validate", async (request): Promise<OrderValidateResponse> => {
+    const { orderId } = parse(orderParams, request.params);
+    const row = await loadForGit(orderId, request.userId);
+    if (row.role !== "chef" && row.order.requestedByUserId !== request.userId) {
+      throw forbidden("Seuls le demandeur et le chef peuvent valider une commande.");
+    }
+    if (!github || !row.repoInstallationId) return { viaServer: false };
+    if (!row.repoFullName || !row.repoDefaultBranch || !row.order.branch || !row.order.pushedAt) {
+      throw new HttpError(409, "order_not_ready", "La branche de cette commande n'est pas sur GitHub.");
+    }
+    let outcome: ServerMerge;
+    try {
+      outcome = await github.mergeBranch(row.repoInstallationId, row.repoFullName, {
+        branch: row.order.branch,
+        base: row.repoDefaultBranch,
+        title: row.order.title,
+        body: `Commande n° ${row.order.number}.\n\n${row.order.summary ?? ""}`.trim(),
+      });
+    } catch (error) {
+      throw new HttpError(502, "github_failed", (error as Error).message);
+    }
+    await recordOrderPullRequest(ctx, row.kitchen, {
+      order: row.order,
+      teamId: row.teamId,
+      repoFullName: row.repoFullName,
+      repoDefaultBranch: row.repoDefaultBranch,
+      number: outcome.number,
+      merged: outcome.merged,
+      byUserId: request.userId,
+    });
+    return { viaServer: true, ...outcome };
+  });
+}
+
+/**
+ * Enregistre la pull request d'une commande et, à la première fusion, l'annonce : les membres
+ * absents la retrouvent dans leurs notifications (F-GIT-06). Une fusion déjà connue ne change rien.
+ */
+export async function recordOrderPullRequest(
+  ctx: AppContext,
+  kitchen: Kitchen,
+  input: {
+    order: typeof orders.$inferSelect;
+    teamId: string;
+    repoFullName: string;
+    repoDefaultBranch: string | null;
+    number: number;
+    merged: boolean;
+    /** Le membre qui valide n'a pas besoin d'être prévenu. */
+    byUserId?: string;
+  },
+): Promise<Order> {
+  const { order: row, teamId, number, merged } = input;
+  // GitHub peut prévenir pendant que la validation se termine : le premier arrivé annonce, seul.
+  const first =
+    row.mergedAt === null &&
+    (!merged ||
+      (
+        await ctx.db
+          .update(orders)
+          .set({ mergedAt: new Date() })
+          .where(and(eq(orders.id, row.id), isNull(orders.mergedAt)))
+          .returning({ id: orders.id })
+      ).length > 0);
+  if (!first) {
+    const order = (await kitchen.list(row.projectId)).find((item) => item.id === row.id);
+    if (!order) throw notFound("Commande introuvable.");
+    return order;
+  }
+  const url = `https://github.com/${input.repoFullName}/pull/${number}`;
+  const order = await kitchen.recordGit(row.id, teamId, {
+    pullRequestNumber: number,
+    pullRequestUrl: url,
+  });
+  if (merged) {
+    await postAgentMessage(ctx, {
+      projectId: row.projectId,
+      teamId,
+      kind: "serveur",
+      body: `La commande n° ${row.number} « ${row.title} » est validée et fusionnée dans \`${input.repoDefaultBranch}\` : [pull request n° ${number}](${url}). Une nouvelle version est disponible.`,
+      mentions: (await memberIds(ctx, teamId)).filter((id) => id !== input.byUserId),
+    });
+  }
+  return order;
 }

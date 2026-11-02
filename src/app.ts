@@ -15,6 +15,7 @@ import { adminAuthRoutes } from "./routes/adminAuth.ts";
 import { attachmentRoutes } from "./routes/attachments.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { betaRequestRoutes } from "./routes/beta.ts";
+import { githubAppRoutes, githubPublicRoutes } from "./routes/github.ts";
 import { meRoutes } from "./routes/me.ts";
 import { memoryRoutes } from "./routes/memory.ts";
 import { messageRoutes } from "./routes/messages.ts";
@@ -22,6 +23,7 @@ import { orderRoutes } from "./routes/orders.ts";
 import { secretRoutes } from "./routes/secrets.ts";
 import { teamRoutes } from "./routes/teams.ts";
 import type { Vault } from "./secrets/vault.ts";
+import type { GitHubApp } from "./services/githubApp.ts";
 import { getMaintenance, maintenanceStatus, resumeMaintenance } from "./services/maintenance.ts";
 import { MemoryStorage, type Storage } from "./storage/storage.ts";
 import { handleConnection } from "./ws/connection.ts";
@@ -44,6 +46,8 @@ export interface AppOptions {
   cuisinierChain?: ModelChoice[];
   /** Client d'IA ; par défaut, appels réels aux fournisseurs (les tests en fournissent un faux). */
   ai?: Ai;
+  /** Application GitHub ; sans elle, tout passe par la connexion de chaque membre. */
+  githubApp?: GitHubApp | null;
   helloTimeoutMs?: number;
 }
 
@@ -108,8 +112,11 @@ export async function buildApp(options: AppOptions) {
     meRoutes(scope, ctx);
     secretRoutes(scope, ctx);
     memoryRoutes(scope, ctx);
-    orderRoutes(scope, ctx, kitchen);
+    orderRoutes(scope, ctx, kitchen, options.githubApp ?? null);
+    githubAppRoutes(scope, ctx, options.githubApp ?? null);
   });
+  const { githubApp } = options;
+  if (githubApp) await app.register(async (scope) => githubPublicRoutes(scope, ctx, githubApp, kitchen));
   await app.register(async (scope) =>
     adminRoutes(scope, ctx, options.adminToken, { serveur: serveurChain, cuisinier: cuisinierChain }),
   );
