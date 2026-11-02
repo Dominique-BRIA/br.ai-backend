@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Bouton « Run workflow » de l'onglet Actions : redéployer sans nouveau commit.
+  workflow_dispatch:
 
 # Deux déploiements ne se chevauchent jamais ; le plus récent attend la fin du précédent.
 concurrency:
@@ -25,12 +27,13 @@ jobs:
       - run: npm test
       - run: npm run build
 
-  # Après chaque push sur main dont la vérification passe : le serveur part sur Azure App Service.
+  # Après chaque push sur main dont la vérification passe, ou à la demande (Run workflow) :
+  # le serveur part sur Azure App Service.
   # Reste inactif tant que la variable AZURE_WEBAPP_NAME n'est pas définie dans le dépôt
   # (Settings → Secrets and variables → Actions → Variables).
   deployer:
     needs: verifier
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AZURE_WEBAPP_NAME != ''
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && vars.AZURE_WEBAPP_NAME != ''
     runs-on: ubuntu-latest
     environment:
       name: production
