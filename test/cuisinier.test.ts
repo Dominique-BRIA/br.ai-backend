@@ -207,6 +207,11 @@ describe("cuisinier", () => {
     });
     expect(merged.json.order.merged).toBe(true);
     expect(await countMerged()).toBe(1);
+    const announcement = (await history()).find((message) =>
+      message.body.includes("est validée et fusionnée"),
+    );
+    expect(announcement?.mentions).toContain(fatou.userId);
+    expect(announcement?.mentions).not.toContain(ali.userId);
     // Une seconde validation n'annonce rien de plus.
     await t.call("PUT", route, { token: ali.token, body: { number: 7, merged: true } });
     expect(await countMerged()).toBe(1);

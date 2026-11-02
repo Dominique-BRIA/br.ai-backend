@@ -6,7 +6,7 @@ import type { Kitchen } from "../agents/cuisinier.ts";
 import type { AppContext } from "../context.ts";
 import { orders, projects } from "../db/schema.ts";
 import { forbidden, HttpError, notFound, parse } from "../http/errors.ts";
-import { requireProject, roleIn } from "../services/access.ts";
+import { memberIds, requireProject, roleIn } from "../services/access.ts";
 import { postAgentMessage } from "../services/messages.ts";
 
 const projectParams = z.object({ projectId: z.uuid() });
@@ -84,19 +84,26 @@ export function orderRoutes(app: FastifyInstance, ctx: AppContext, kitchen: Kitc
     if (!row.repoFullName) {
       throw new HttpError(409, "order_not_ready", "Ce projet n'a plus de dépôt GitHub.");
     }
-    const alreadyMerged = row.order.mergedAt !== null;
+    if (row.order.mergedAt !== null) {
+      const order = (await row.kitchen.list(row.order.projectId)).find((item) => item.id === orderId);
+      if (!order) throw notFound("Commande introuvable.");
+      return { order };
+    }
     const url = `https://github.com/${row.repoFullName}/pull/${body.number}`;
     const order = await row.kitchen.recordGit(orderId, row.teamId, {
       pullRequestNumber: body.number,
       pullRequestUrl: url,
-      ...(body.merged && !alreadyMerged ? { mergedAt: new Date() } : {}),
+      ...(body.merged ? { mergedAt: new Date() } : {}),
     });
-    if (body.merged && !alreadyMerged) {
+    if (body.merged) {
+      const others = (await memberIds(ctx, row.teamId)).filter((id) => id !== request.userId);
       await postAgentMessage(ctx, {
         projectId: row.order.projectId,
         teamId: row.teamId,
         kind: "serveur",
-        body: `La commande n° ${row.order.number} « ${row.order.title} » est validée et fusionnée dans \`${row.repoDefaultBranch}\` : [pull request n° ${body.number}](${url}).`,
+        body: `La commande n° ${row.order.number} « ${row.order.title} » est validée et fusionnée dans \`${row.repoDefaultBranch}\` : [pull request n° ${body.number}](${url}). Une nouvelle version est disponible.`,
+        // Les membres absents le verront dans leurs notifications (F-GIT-06).
+        mentions: others,
       });
     }
     return { order };
