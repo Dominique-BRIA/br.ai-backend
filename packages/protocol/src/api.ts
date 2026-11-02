@@ -49,6 +49,7 @@ export const apiErrorCode = z.enum([
   "maintenance",
   "already_invited",
   "mail_failed",
+  "order_not_ready",
 ]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 
@@ -147,6 +148,13 @@ export const setProjectRepoBody = z.object({
     .nullable(),
 });
 export type SetProjectRepoBody = z.input<typeof setProjectRepoBody>;
+
+/** Pull request ouverte par la machine du membre qui valide une commande. */
+export const orderPullRequestBody = z.object({
+  number: z.number().int().positive(),
+  merged: z.boolean(),
+});
+export type OrderPullRequestBody = z.input<typeof orderPullRequestBody>;
 
 // Messages
 

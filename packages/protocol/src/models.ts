@@ -192,6 +192,10 @@ export const order = z.object({
   commit: z.string().nullable(),
   /** La branche a été poussée sur GitHub. */
   pushed: z.boolean(),
+  /** Pull request ouverte à la validation du demandeur. */
+  pullRequest: z.object({ number: z.number().int().positive(), url: z.url() }).nullable(),
+  /** La pull request est fusionnée dans la branche principale. */
+  merged: z.boolean(),
   /** Dernières étapes, de la plus ancienne à la plus récente. */
   steps: z.array(orderStep),
   createdAt: z.iso.datetime(),

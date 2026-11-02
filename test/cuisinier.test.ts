@@ -185,6 +185,36 @@ describe("cuisinier", () => {
     });
     expect(done?.summary).toContain("Commit abc1234 poussé sur GitHub.");
 
+    // Le demandeur valide : sa machine a fusionné la pull request, le serveur l'enregistre.
+    const route = `/orders/${order.id}/pull-request`;
+    expect(
+      (await t.call("PUT", route, { token: fatou.token, body: { number: 7, merged: true } })).status,
+    ).toBe(403);
+    const open = await t.call<{ order: Order }>("PUT", route, {
+      token: ali.token,
+      body: { number: 7, merged: false },
+    });
+    expect(open.json.order).toMatchObject({
+      pullRequest: { number: 7, url: "https://github.com/dominique/site/pull/7" },
+      merged: false,
+    });
+    const countMerged = async () =>
+      (await history()).filter((message) => message.body.includes("est validée et fusionnée")).length;
+    expect(await countMerged()).toBe(0);
+    const merged = await t.call<{ order: Order }>("PUT", route, {
+      token: ali.token,
+      body: { number: 7, merged: true },
+    });
+    expect(merged.json.order.merged).toBe(true);
+    expect(await countMerged()).toBe(1);
+    // Une seconde validation n'annonce rien de plus.
+    await t.call("PUT", route, { token: ali.token, body: { number: 7, merged: true } });
+    expect(await countMerged()).toBe(1);
+
+    // Pousser plus tard : réservé au propriétaire de la machine.
+    expect((await t.call("POST", `/orders/${order.id}/pushed`, { token: fatou.token })).status).toBe(403);
+    expect((await t.call("POST", `/orders/${order.id}/pushed`, { token: ali.token })).status).toBe(200);
+
     const unlinked = await t.call<{ project: Project }>("PUT", `/projects/${projectId}/repo`, {
       token: chef.token,
       body: { repo: null },

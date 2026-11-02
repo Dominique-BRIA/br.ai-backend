@@ -283,6 +283,10 @@ export const orders = pgTable(
     branch: text(),
     commitSha: text(),
     pushedAt: timestamp({ withTimezone: true }),
+    /** Pull request ouverte à la validation, et date de sa fusion. */
+    pullRequestNumber: integer(),
+    pullRequestUrl: text(),
+    mergedAt: timestamp({ withTimezone: true }),
     steps: jsonb().$type<OrderStepRow[]>().notNull().default([]),
     createdAt: createdAt(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

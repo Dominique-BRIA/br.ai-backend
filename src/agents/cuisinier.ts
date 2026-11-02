@@ -155,6 +155,19 @@ export class Kitchen implements KitchenHooks {
     return this.#toOrders(rows);
   }
 
+  /** Enregistre ce qu'un membre a fait sur GitHub pour cette commande et le diffuse à l'équipe. */
+  async recordGit(
+    orderId: string,
+    teamId: string,
+    values: { pushedAt?: Date; pullRequestNumber?: number; pullRequestUrl?: string; mergedAt?: Date },
+  ): Promise<Order> {
+    await this.#ctx.db
+      .update(orders)
+      .set({ ...values, updatedAt: new Date() })
+      .where(eq(orders.id, orderId));
+    return this.#publish(orderId, teamId);
+  }
+
   /** Arrête une commande en attente ou en cours. */
   async stop(orderId: string): Promise<void> {
     const active = [...this.#active.values()].find((entry) => entry.orderId === orderId);
@@ -629,6 +642,11 @@ export class Kitchen implements KitchenHooks {
         branch: row.branch,
         commit: row.commitSha,
         pushed: row.pushedAt !== null,
+        pullRequest:
+          row.pullRequestNumber !== null && row.pullRequestUrl !== null
+            ? { number: row.pullRequestNumber, url: row.pullRequestUrl }
+            : null,
+        merged: row.mergedAt !== null,
         steps: row.steps,
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),
