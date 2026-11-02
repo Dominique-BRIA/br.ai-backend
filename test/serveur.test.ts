@@ -267,10 +267,11 @@ describe("couche commune d'IA", () => {
     });
 
     const [toMistral, toGemini] = bodies;
-    const sent = toMistral?.messages[1] as unknown as { tool_calls: Record<string, unknown>[] };
+    if (!toMistral) throw new Error("Aucun appel à Mistral.");
+    const sent = toMistral.messages[1] as unknown as { tool_calls: Record<string, unknown>[] };
     expect(sent.tool_calls[0]).not.toHaveProperty("extra_content");
     expect(sent.tool_calls[0]?.id).toMatch(/^[a-zA-Z0-9]{9}$/);
-    expect((toMistral?.messages[2] as { tool_call_id: string }).tool_call_id).toBe(sent.tool_calls[0]?.id);
+    expect((toMistral.messages[2] as { tool_call_id: string }).tool_call_id).toBe(sent.tool_calls[0]?.id);
     // Gemini retrouve sa signature telle quelle.
     expect(toGemini?.messages[1]).toEqual(messages[1]);
   });
