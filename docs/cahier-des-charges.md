@@ -43,15 +43,15 @@ Chaque exigence porte un identifiant (`F-CPT-01`, etc.) et une priorité :
 
 ### 3.1 Comptes et connexion
 
-| ID       | Exigence                                                                                                                                  | Priorité  |
-| -------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| F-CPT-01 | Créer un compte depuis l'extension VS Code avec une adresse e-mail et un code de vérification envoyé par e-mail. Pas de mot de passe.     | Bêta      |
-| F-CPT-02 | Se connecter de la même façon. La session reste ouverte sur la machine jusqu'à déconnexion.                                               | Bêta      |
-| F-CPT-03 | L'inscription est ouverte à tous. Le code d'invitation donne des crédits d'IA à l'équipe qui le saisit ; sans crédit, l'IA ne répond pas. | Bêta      |
-| F-CPT-04 | Profil : nom affiché, langue (français ou anglais), photo facultative.                                                                    | Bêta      |
-| F-CPT-05 | Déconnecter une machine à distance depuis une autre.                                                                                      | Bêta      |
-| F-CPT-06 | Supprimer son compte. Ses messages restent dans les projets, signés « ancien membre ».                                                    | Bêta      |
-| F-CPT-07 | Connexion avec GitHub.                                                                                                                    | Plus tard |
+| ID       | Exigence                                                                                                                                                                                                   | Priorité  |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| F-CPT-01 | Créer un compte depuis l'extension VS Code avec une adresse e-mail et un code de vérification envoyé par e-mail. Pas de mot de passe.                                                                      | Bêta      |
+| F-CPT-02 | Se connecter de la même façon. La session reste ouverte sur la machine jusqu'à déconnexion.                                                                                                                | Bêta      |
+| F-CPT-03 | L'inscription est ouverte à tous. Le crédit de départ est nul : un code, dont le montant est réglé dans le back-office, donne des crédits d'IA à l'équipe ; sans crédit, l'IA ne répond pas et le signale. | Bêta      |
+| F-CPT-04 | Profil : nom affiché, langue (français ou anglais), photo facultative.                                                                                                                                     | Bêta      |
+| F-CPT-05 | Déconnecter une machine à distance depuis une autre.                                                                                                                                                       | Bêta      |
+| F-CPT-06 | Supprimer son compte. Ses messages restent dans les projets, signés « ancien membre ».                                                                                                                     | Bêta      |
+| F-CPT-07 | Connexion avec GitHub.                                                                                                                                                                                     | Plus tard |
 
 ### 3.2 Équipes et projets
 

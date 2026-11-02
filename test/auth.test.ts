@@ -71,7 +71,7 @@ describe("connexion par e-mail", () => {
   });
 
   it("ferme les routes d'administration sans le bon jeton", async () => {
-    const response = await t.call("POST", "/admin/beta-invites", { body: {} });
+    const response = await t.call("POST", "/admin/promo-codes", { body: {} });
     expect(response.status).toBe(401);
   });
 });

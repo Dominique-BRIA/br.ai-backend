@@ -5,9 +5,8 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { ModelChoice } from "../ai/client.ts";
 import { allowed, requiredPermission } from "../auth/adminPermissions.ts";
-import { newInvitationCode } from "../auth/secrets.ts";
 import type { AppContext } from "../context.ts";
-import { betaInvites, promoCodes } from "../db/schema.ts";
+import { promoCodes } from "../db/schema.ts";
 import { HttpError, parse } from "../http/errors.ts";
 import { auditDetail, describeAction, recordAudit } from "../services/audit.ts";
 import { createPromoCodes, toPromoCode } from "../services/promo.ts";
@@ -15,12 +14,6 @@ import { adminAccountRoutes, findAdminSession } from "./adminAuth.ts";
 import { betaRequestAdminRoutes } from "./beta.ts";
 import { dashboardRoutes } from "./dashboard.ts";
 import { insightRoutes } from "./insights.ts";
-
-const createBetaInviteBody = z.object({
-  maxUses: z.number().int().min(1).max(1000).default(1),
-  note: z.string().max(200).optional(),
-  expiresInDays: z.number().int().min(1).max(365).optional(),
-});
 
 /**
  * Routes de l'équipe interne, protégées par le jeton `ADMIN_TOKEN`.
@@ -102,14 +95,6 @@ export function adminRoutes(
       .returning();
     if (!row) throw new HttpError(404, "not_found", "Code introuvable.");
     return { code: toPromoCode(row) };
-  });
-
-  app.post("/admin/beta-invites", async (request) => {
-    const { maxUses, note, expiresInDays } = parse(createBetaInviteBody, request.body ?? {});
-    const code = newInvitationCode("BETA");
-    const expiresAt = expiresInDays ? new Date(Date.now() + expiresInDays * 86_400_000) : null;
-    await ctx.db.insert(betaInvites).values({ code, maxUses, note, expiresAt });
-    return { code, maxUses, expiresAt: expiresAt?.toISOString() ?? null };
   });
 }
 

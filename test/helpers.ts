@@ -78,15 +78,15 @@ export async function startApp(
     return { status: response.statusCode, json: response.body ? response.json() : (undefined as T) };
   }
 
-  async function betaInvite(maxUses = 10): Promise<string> {
-    const { json } = await call<{ code: string }>("POST", "/admin/beta-invites", {
+  /** Un code de crédits, créé comme dans le tableau de bord. */
+  async function creditCode(maxUses = 10, credits = 2000, durationMonths = 3): Promise<string> {
+    const { json } = await call<{ codes: string[] }>("POST", "/admin/promo-codes", {
       admin: true,
-      body: { maxUses },
+      body: { kind: "credits", credits, durationMonths, maxUses },
     });
-    return json.code;
+    return String(json.codes[0]);
   }
 
-  /** Crée un compte avec une invitation et renvoie son jeton de session. */
   /** Crée un compte ; avec une clé d'équipe, il rejoint aussi cette équipe. */
   async function signUp(email: string, displayName: string, teamKey?: string) {
     await call("POST", "/auth/code", { body: { email } });
@@ -161,7 +161,7 @@ export async function startApp(
     mailer,
     wsUrl,
     call,
-    betaInvite,
+    creditCode,
     signUp,
     workspace,
     live,

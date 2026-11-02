@@ -5,14 +5,14 @@ import { parseChain } from "./ai/client.ts";
 import { buildApp } from "./app.ts";
 import { loadConfig } from "./config.ts";
 import { openDatabase, openPostgres } from "./db/client.ts";
-import { betaInvites } from "./db/schema.ts";
+import { promoCodes } from "./db/schema.ts";
 import { ResendMailer } from "./mail/mailer.ts";
 import { Vault } from "./secrets/vault.ts";
 import { githubAppFrom } from "./services/githubApp.ts";
 import { B2Storage, DiskStorage } from "./storage/storage.ts";
 
 /** Code d'invitation créé automatiquement en développement, pour tester sans tableau de bord. */
-const DEV_INVITE_CODE = "BETA-DEV";
+const DEV_CREDITS_CODE = "BRIA-DEV";
 
 const config = loadConfig();
 // En production, la base est PostgreSQL (Neon) ; en développement, PGlite, même si DATABASE_URL est
@@ -61,16 +61,18 @@ const { app } = await buildApp({
 });
 
 if (config.NODE_ENV === "development") {
-  const [existing] = await database.db
-    .select()
-    .from(betaInvites)
-    .where(eq(betaInvites.code, DEV_INVITE_CODE));
+  const [existing] = await database.db.select().from(promoCodes).where(eq(promoCodes.code, DEV_CREDITS_CODE));
   if (!existing) {
-    await database.db
-      .insert(betaInvites)
-      .values({ code: DEV_INVITE_CODE, maxUses: 100, note: "développement" });
+    await database.db.insert(promoCodes).values({
+      code: DEV_CREDITS_CODE,
+      kind: "credits",
+      credits: 100_000,
+      durationMonths: 1,
+      onePerAccount: false,
+      note: "développement",
+    });
   }
-  app.log.info(`Code d'invitation de développement : ${DEV_INVITE_CODE}`);
+  app.log.info(`Code de crédits de développement : ${DEV_CREDITS_CODE}`);
 }
 app.log.info(
   `Agent serveur : ${serveurChain.map((choice) => `${choice.provider.name}/${choice.model}`).join(", ") || "désactivé"}`,

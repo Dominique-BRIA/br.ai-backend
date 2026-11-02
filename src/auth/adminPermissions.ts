@@ -36,7 +36,6 @@ const BY_PREFIX: [string, AdminPermission][] = [
   ["/admin/teams", "equipes"],
   ["/admin/costs", "couts"],
   ["/admin/promo-codes", "codes"],
-  ["/admin/beta-invites", "codes"],
   ["/admin/beta-requests", "demandes"],
   ["/admin/feedback", "retours"],
   ["/admin/maintenance", "maintenance"],

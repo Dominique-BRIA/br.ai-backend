@@ -26,14 +26,19 @@ describe("demandes d'accès à la bêta", () => {
     const mine = json.requests.filter((request) => request.email === "lea@exemple.org");
     expect(mine).toHaveLength(1);
 
-    const invite = await t.call<{ code: string }>("POST", `/admin/beta-requests/${mine[0]?.id}/invite`, {
+    const route = `/admin/beta-requests/${mine[0]?.id}/invite`;
+    // Le montant est obligatoire : il se choisit à l'envoi.
+    expect((await t.call("POST", route, { admin: true })).status).toBe(400);
+    const invite = await t.call<{ code: string }>("POST", route, {
       admin: true,
+      body: { credits: 750, months: 2 },
     });
-    expect(invite.json.code).toMatch(/^BETA-/);
+    expect(invite.json.code).toMatch(/^BRIA-/);
     const mail = t.mailer.sent.findLast((sent) => sent.to === "lea@exemple.org");
     expect(mail?.text).toContain(invite.json.code);
+    expect(mail?.text).toContain("750 crédits d'IA par mois pendant 2 mois");
 
-    const again = await t.call("POST", `/admin/beta-requests/${mine[0]?.id}/invite`, { admin: true });
+    const again = await t.call("POST", route, { admin: true, body: { credits: 750, months: 2 } });
     expect(again.status).toBe(409);
 
     const sentBefore = t.mailer.sent.length;

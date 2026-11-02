@@ -27,9 +27,6 @@ export interface CreditRates {
 export type Plan = typeof plans.$inferSelect;
 
 const FALLBACK_RATES: CreditRates = { default: { input: 1, output: 3 }, models: {} };
-/** Ce qu'un code d'invitation offre à une équipe : chaque mois, pendant quelques mois. */
-export const INVITATION_CREDITS = 2000;
-export const INVITATION_MONTHS = 3;
 /** À partir de cette part du quota, le chef est prévenu. */
 const WARNING_RATIO = 0.8;
 

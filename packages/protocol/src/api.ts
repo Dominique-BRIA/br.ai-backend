@@ -364,7 +364,7 @@ export const redeemPromoResponse = z.object({
 });
 export type RedeemPromoResponse = z.infer<typeof redeemPromoResponse>;
 
-export const promoKind = z.enum(["plan", "trial", "credits", "percent", "amount", "beta"]);
+export const promoKind = z.enum(["plan", "trial", "credits", "percent", "amount"]);
 export type PromoKind = z.infer<typeof promoKind>;
 
 /** POST /admin/promo-codes — un code, ou un lot de codes uniques (count > 1). */

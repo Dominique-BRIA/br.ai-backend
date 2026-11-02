@@ -1,5 +1,4 @@
 import type { Locale } from "@br-ia/protocol";
-import { INVITATION_CREDITS, INVITATION_MONTHS } from "../services/credits.ts";
 import type { Mail } from "./mailer.ts";
 
 /*
@@ -103,11 +102,20 @@ export function loginCodeMail(
 }
 
 /** Réponse à une demande laissée sur le site : le code d'invitation, qui donne des crédits d'IA. */
-export function betaInviteMail(to: string, code: string, expiresAt: Date): Mail {
+export function betaInviteMail(
+  to: string,
+  code: string,
+  expiresAt: Date,
+  offer: { credits: number; months: number },
+): Mail {
+  const gift =
+    offer.months > 1
+      ? `${offer.credits} crédits d'IA par mois pendant ${offer.months} mois`
+      : `${offer.credits} crédits d'IA ce mois-ci`;
   const until = expiresAt.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
   const title = "Vos crédits d'IA";
   const intro = (brand: string) =>
-    `Voici votre code d'invitation à ${brand}. Il offre à votre équipe ${INVITATION_CREDITS} crédits d'IA par mois pendant ${INVITATION_MONTHS} mois.`;
+    `Voici votre code d'invitation à ${brand}. Il offre à votre équipe ${gift}.`;
   const steps = (brand: string) =>
     `Installez l'extension ${brand} dans VS Code, créez votre compte et votre équipe, puis saisissez ce code dans l'onglet Équipe, avec « Saisir un code ».`;
   const validity = `Il est valable jusqu'au ${until}, pour une seule équipe.`;
