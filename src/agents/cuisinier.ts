@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { cookTools, isCookTool, type Order, type OrderStatus } from "@br-ia/protocol";
+import { cookTools, gitSaveResult, isCookTool, type Order, type OrderStatus } from "@br-ia/protocol";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -15,6 +15,7 @@ import type { LiveConnection } from "../realtime/hub.ts";
 import { memberIds } from "../services/access.ts";
 import { announceMemoryChange, setMemoryStatus } from "../services/memory.ts";
 import { postAgentMessage } from "../services/messages.ts";
+import { orderBranch } from "../services/projects.ts";
 import { secretNames } from "../services/secrets.ts";
 
 /** Nombre maximal de tours de l'IA pour une commande. */
@@ -60,7 +61,7 @@ Méthode :
 - Modifie le minimum nécessaire, dans le style du code existant. edit_file pour une modification ciblée, write_file pour créer un fichier.
 - Vérifie ton travail quand c'est possible : lance les tests ou la compilation avec run_command, et corrige ce qui échoue.
 - Les documents se rédigent en Markdown, sauf demande contraire.
-- N'utilise pas git (ni commit, ni push) : ce sera géré plus tard.
+- N'utilise pas git (ni branche, ni commit, ni push) : quand le projet a un dépôt GitHub, <br/> prépare la branche de la commande avant toi et enregistre ton travail après « finish ».
 - Évite les commandes destructrices ou globales (suppressions en masse, installations globales).
 - Hors du dossier du projet (« sur le Bureau », « dans Documents »…), utilise un chemin absolu construit à partir des dossiers de la machine indiqués dans la commande. N'invente jamais un chemin, un nom d'utilisateur ou un lecteur : si le dossier n'est pas indiqué, vérifie avec list_dir ou check_environment, ou demande-le dans le bilan.
 
@@ -314,6 +315,8 @@ export class Kitchen implements KitchenHooks {
     const changed = new Set<string>();
     let nudges = 0;
     try {
+      const branch = await this.#prepareBranch(machine, order, teamId, signal);
+      if (branch === false) return;
       for (let turn = 1; turn <= MAX_TURNS; turn++) {
         if (signal.aborted) throw new StoppedError();
         const reply = await this.#ai.toolTurn(this.#chain, {
@@ -349,7 +352,17 @@ export class Kitchen implements KitchenHooks {
           if (name === "finish") {
             const parsed = finishInput.safeParse(args);
             if (parsed.success) {
-              return await this.#finish(order, teamId, parsed.data.success, parsed.data.summary, changed);
+              const saved =
+                parsed.data.success && branch
+                  ? await this.#saveBranch(machine, order, branch, parsed.data.summary, signal)
+                  : "";
+              return await this.#finish(
+                order,
+                teamId,
+                parsed.data.success,
+                `${parsed.data.summary}${saved}`,
+                changed,
+              );
             }
             messages.push(toolMessage(call.id, name, "Paramètres invalides pour finish."));
             continue;
@@ -425,6 +438,77 @@ export class Kitchen implements KitchenHooks {
         throw error;
       }
     }
+  }
+
+  /**
+   * Sans dépôt branché au projet, rien à faire (null). Sinon, la machine se place sur la
+   * branche de la commande, créée depuis la branche principale ou reprise si elle existe déjà.
+   * En cas d'échec, la commande s'arrête avec l'explication (false).
+   */
+  async #prepareBranch(
+    machine: LiveConnection,
+    order: OrderRow,
+    teamId: string,
+    signal: AbortSignal,
+  ): Promise<string | null | false> {
+    const [project] = await this.#ctx.db
+      .select({ repoFullName: projects.repoFullName, repoDefaultBranch: projects.repoDefaultBranch })
+      .from(projects)
+      .where(eq(projects.id, order.projectId));
+    if (!project?.repoFullName || !project.repoDefaultBranch) return null;
+    const branch = order.branch ?? orderBranch(order.number, order.title);
+    const prepared = await this.#callTool(
+      machine,
+      order,
+      "git_prepare",
+      { branch, base: project.repoDefaultBranch },
+      signal,
+    );
+    if (!prepared.ok) {
+      await this.#finish(
+        order,
+        teamId,
+        false,
+        `La branche \`${branch}\` n'a pas pu être préparée sur cette machine : ${prepared.output}`,
+        new Set(),
+      );
+      return false;
+    }
+    await this.#ctx.db.update(orders).set({ branch, updatedAt: new Date() }).where(eq(orders.id, order.id));
+    await this.#step(order.id, "info", prepared.output);
+    await this.#publish(order.id, teamId);
+    return branch;
+  }
+
+  /**
+   * Enregistre le travail dans un commit au nom du propriétaire de la machine, puis pousse la
+   * branche selon sa préférence. Renvoie la ligne à ajouter au bilan.
+   */
+  async #saveBranch(
+    machine: LiveConnection,
+    order: OrderRow,
+    branch: string,
+    summary: string,
+    signal: AbortSignal,
+  ): Promise<string> {
+    const message = `${order.title}\n\nCommande n° ${order.number}.\n\n${summary}`.slice(0, 4000);
+    const result = await this.#callTool(machine, order, "git_save", { branch, message }, signal);
+    let saved: z.infer<typeof gitSaveResult> | null = null;
+    try {
+      saved = result.ok ? gitSaveResult.parse(JSON.parse(result.output)) : null;
+    } catch {
+      saved = null;
+    }
+    if (!saved) {
+      await this.#step(order.id, "error", `Travail non enregistré dans Git : ${result.output}`);
+      return `\n\nLe travail n'a pas pu être enregistré dans Git : ${result.output}`;
+    }
+    await this.#ctx.db
+      .update(orders)
+      .set({ commitSha: saved.commit, pushedAt: saved.pushed ? new Date() : null, updatedAt: new Date() })
+      .where(eq(orders.id, order.id));
+    await this.#step(order.id, "info", saved.note);
+    return `\n\n${saved.note}`;
   }
 
   /** Envoie un outil à la machine et attend son résultat. */
@@ -542,6 +626,9 @@ export class Kitchen implements KitchenHooks {
             : null,
         summary: row.summary,
         changedFiles: row.changedFiles,
+        branch: row.branch,
+        commit: row.commitSha,
+        pushed: row.pushedAt !== null,
         steps: row.steps,
         createdAt: row.createdAt.toISOString(),
         updatedAt: row.updatedAt.toISOString(),

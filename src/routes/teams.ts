@@ -7,6 +7,7 @@ import {
   type Project,
   type RedeemPromoResponse,
   redeemPromoBody,
+  setProjectRepoBody,
   type Team,
   type TeamUsage,
   transferChefBody,
@@ -22,6 +23,8 @@ import { projects, teamInvitations, teamMembers, teams, users } from "../db/sche
 import { forbidden, HttpError, notFound, parse } from "../http/errors.ts";
 import { memberIds, requireChef, requireMember, roleIn } from "../services/access.ts";
 import { requireWithinPlan, teamUsage } from "../services/credits.ts";
+import { postAgentMessage } from "../services/messages.ts";
+import { projectColumns, toProject } from "../services/projects.ts";
 import { redeemPromo } from "../services/promo.ts";
 import { revokeSecretsOnDeparture } from "../services/secrets.ts";
 import { buildTeam, buildWorkspace } from "../services/workspace.ts";
@@ -208,13 +211,10 @@ export function teamRoutes(app: FastifyInstance, ctx: AppContext): void {
     const { name } = parse(createProjectBody, request.body);
     await requireMember(ctx, request.userId, teamId);
     await requireWithinPlan(ctx, teamId, "projects");
-    const [project] = await ctx.db
-      .insert(projects)
-      .values({ teamId, name })
-      .returning({ id: projects.id, teamId: projects.teamId, name: projects.name });
+    const [project] = await ctx.db.insert(projects).values({ teamId, name }).returning(projectColumns);
     if (!project) throw new Error("Création du projet impossible.");
     await notifyTeam(teamId);
-    return { project };
+    return { project: toProject(project) };
   });
 
   app.patch("/projects/:projectId", async (request): Promise<{ project: Project }> => {
@@ -233,9 +233,39 @@ export function teamRoutes(app: FastifyInstance, ctx: AppContext): void {
         ...(changes.archived !== undefined && { archivedAt: changes.archived ? new Date() : null }),
       })
       .where(eq(projects.id, projectId))
-      .returning({ id: projects.id, teamId: projects.teamId, name: projects.name });
+      .returning(projectColumns);
     if (!project) throw notFound("Projet introuvable.");
     await notifyTeam(current.teamId);
-    return { project };
+    return { project: toProject(project) };
+  });
+
+  /**
+   * Le chef branche un dépôt GitHub au projet, ou le débranche. L'extension vérifie avant
+   * envoi, avec l'accès GitHub du chef, que le dépôt existe et lit sa branche principale.
+   */
+  app.put("/projects/:projectId/repo", async (request): Promise<{ project: Project }> => {
+    const { projectId } = parse(projectParams, request.params);
+    const { repo } = parse(setProjectRepoBody, request.body);
+    const [current] = await ctx.db.select().from(projects).where(eq(projects.id, projectId));
+    if (!current || current.archivedAt) throw notFound("Projet introuvable.");
+    await requireChef(ctx, request.userId, current.teamId);
+    const [project] = await ctx.db
+      .update(projects)
+      .set({ repoFullName: repo?.fullName ?? null, repoDefaultBranch: repo?.defaultBranch ?? null })
+      .where(eq(projects.id, projectId))
+      .returning(projectColumns);
+    if (!project) throw notFound("Projet introuvable.");
+    await notifyTeam(current.teamId);
+    if (repo?.fullName !== current.repoFullName) {
+      await postAgentMessage(ctx, {
+        projectId,
+        teamId: current.teamId,
+        kind: "serveur",
+        body: repo
+          ? `Le dépôt GitHub **${repo.fullName}** est branché au projet. Chaque commande du cuisinier travaillera sur sa propre branche, à partir de \`${repo.defaultBranch}\`.`
+          : "Le dépôt GitHub n'est plus branché au projet : le cuisinier travaille sans branches ni commits.",
+      });
+    }
+    return { project: toProject(project) };
   });
 }

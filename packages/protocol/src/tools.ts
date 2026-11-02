@@ -59,6 +59,43 @@ export const cookTools = {
 } as const;
 
 export type CookToolName = keyof typeof cookTools;
+
+/** Nom de branche d'une commande : bria/<numéro>-<titre court>. */
+export const orderBranchPattern = /^bria\/[0-9]+-[a-z0-9-]{0,60}$/;
+
+/**
+ * Outils Git du cuisinier. C'est le serveur qui les lance, autour du travail de l'IA, qui ne
+ * les voit jamais : une branche par commande, puis un commit au nom du membre et le push.
+ */
+export const gitTools = {
+  /** Prépare la branche de la commande à partir de la branche principale (ou la reprend). */
+  git_prepare: {
+    input: z.object({
+      branch: z.string().regex(orderBranchPattern),
+      base: z.string().min(1).max(200),
+    }),
+  },
+  /** Enregistre le travail dans un commit, puis pousse la branche selon la préférence du membre. */
+  git_save: {
+    input: z.object({
+      branch: z.string().regex(orderBranchPattern),
+      message: z.string().min(1).max(4000),
+    }),
+  },
+} as const;
+export type GitToolName = keyof typeof gitTools;
+
+export function isGitTool(name: string): name is GitToolName {
+  return Object.hasOwn(gitTools, name);
+}
+
+/** Réponse de git_save, renvoyée en JSON dans la sortie de l'outil. */
+export const gitSaveResult = z.object({
+  commit: z.string().nullable(),
+  pushed: z.boolean(),
+  note: z.string(),
+});
+export type GitSaveResult = z.infer<typeof gitSaveResult>;
 export type CookToolInput<T extends CookToolName> = z.output<(typeof cookTools)[T]["input"]>;
 
 export function isCookTool(name: string): name is CookToolName {

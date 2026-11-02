@@ -155,6 +155,9 @@ export const projects = pgTable(
       .notNull()
       .references(() => teams.id, { onDelete: "cascade" }),
     name: text().notNull(),
+    /** Dépôt GitHub branché par le chef : « propriétaire/nom ». */
+    repoFullName: text(),
+    repoDefaultBranch: text(),
     archivedAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
   },
@@ -276,6 +279,10 @@ export const orders = pgTable(
     machineSessionId: uuid().references(() => sessions.id, { onDelete: "set null" }),
     summary: text(),
     changedFiles: text().array().notNull().default(sql`'{}'::text[]`),
+    /** Branche Git de la commande, son dernier commit et la date du push. */
+    branch: text(),
+    commitSha: text(),
+    pushedAt: timestamp({ withTimezone: true }),
     steps: jsonb().$type<OrderStepRow[]>().notNull().default([]),
     createdAt: createdAt(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

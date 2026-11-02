@@ -3,6 +3,7 @@ import { and, asc, eq, inArray, isNull, max } from "drizzle-orm";
 import type { AppContext } from "../context.ts";
 import { projects, sessions, teamMembers, teams, users } from "../db/schema.ts";
 import { notFound } from "../http/errors.ts";
+import { projectColumns, toProject } from "./projects.ts";
 
 /** L'espace de travail d'un membre : son compte, ses équipes, leurs membres et leurs projets actifs. */
 export async function buildWorkspace(ctx: AppContext, userId: string): Promise<Workspace> {
@@ -33,7 +34,7 @@ export async function buildWorkspace(ctx: AppContext, userId: string): Promise<W
             .where(inArray(teamMembers.teamId, teamIds))
             .orderBy(asc(users.displayName)),
           ctx.db
-            .select({ id: projects.id, teamId: projects.teamId, name: projects.name })
+            .select(projectColumns)
             .from(projects)
             .where(and(inArray(projects.teamId, teamIds), isNull(projects.archivedAt)))
             .orderBy(asc(projects.name)),
@@ -67,7 +68,7 @@ export async function buildWorkspace(ctx: AppContext, userId: string): Promise<W
             online: ctx.hub.isOnline(userId),
             lastSeenAt: lastSeen.get(userId)?.toISOString() ?? null,
           })),
-        projects: projectRows.filter((project) => project.teamId === team.id),
+        projects: projectRows.filter((project) => project.teamId === team.id).map(toProject),
       }),
     ),
   };

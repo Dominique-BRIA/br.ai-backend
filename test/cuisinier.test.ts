@@ -1,4 +1,4 @@
-import type { MemoryResponse, Message, Order, OrdersResponse, Team } from "@br-ia/protocol";
+import type { MemoryResponse, Message, Order, OrdersResponse, Project, Team } from "@br-ia/protocol";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { parseChain } from "../src/ai/client.ts";
 import { ScriptedAi } from "./fakeAi.ts";
@@ -148,6 +148,48 @@ describe("cuisinier", () => {
     expect((await t.call("POST", `/orders/${order.id}/stop`, { token: fatou.token })).status).toBe(403);
     const stopped = await t.call<{ order: Order }>("POST", `/orders/${order.id}/stop`, { token: chef.token });
     expect(stopped.json.order.status).toBe("stopped");
+  });
+
+  it("travaille sur la branche de la commande quand le projet a un dépôt GitHub", async () => {
+    const repo = { fullName: "dominique/site", defaultBranch: "main" };
+    const byMember = await t.call("PUT", `/projects/${projectId}/repo`, {
+      token: fatou.token,
+      body: { repo },
+    });
+    expect(byMember.status).toBe(403);
+    const linked = await t.call<{ project: Project }>("PUT", `/projects/${projectId}/repo`, {
+      token: chef.token,
+      body: { repo },
+    });
+    expect(linked.json.project.repo).toEqual(repo);
+    const announced = (await history()).filter((message) => message.author.kind === "serveur").at(-1);
+    expect(announced?.body).toContain("**dominique/site** est branché");
+
+    const order = await request(ali.token, "Page à propos");
+    ai.turns.push({ calls: [{ name: "finish", input: { success: true, summary: "La page est créée." } }] });
+    const aliMachine = await machine(ali.token, false, (tool) =>
+      tool === "git_save"
+        ? JSON.stringify({ commit: "abc1234", pushed: true, note: "Commit abc1234 poussé sur GitHub." })
+        : "Branche prête.",
+    );
+    await waitFor(async () => (await orders())[0]?.status === "done");
+    await aliMachine.close();
+
+    // Branche préparée avant le travail de l'IA, commit et push après.
+    expect(aliMachine.tools).toEqual(["git_prepare", "git_save"]);
+    const done = (await orders())[0];
+    expect(done).toMatchObject({
+      branch: `bria/${order.number}-page-a-propos`,
+      commit: "abc1234",
+      pushed: true,
+    });
+    expect(done?.summary).toContain("Commit abc1234 poussé sur GitHub.");
+
+    const unlinked = await t.call<{ project: Project }>("PUT", `/projects/${projectId}/repo`, {
+      token: chef.token,
+      body: { repo: null },
+    });
+    expect(unlinked.json.project.repo).toBeNull();
   });
 
   it("remet la commande en attente si la machine se déconnecte en cours de route", async () => {

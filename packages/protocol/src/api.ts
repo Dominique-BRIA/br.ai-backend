@@ -134,6 +134,20 @@ export const updateProjectBody = z.object({
 });
 export type UpdateProjectBody = z.input<typeof updateProjectBody>;
 
+/** PUT /projects/:projectId/repo — le chef branche un dépôt GitHub au projet, ou le débranche (null). */
+export const setProjectRepoBody = z.object({
+  repo: z
+    .object({
+      fullName: z
+        .string()
+        .trim()
+        .regex(/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/, "Format attendu : propriétaire/nom-du-dépôt"),
+      defaultBranch: z.string().trim().min(1).max(200),
+    })
+    .nullable(),
+});
+export type SetProjectRepoBody = z.input<typeof setProjectRepoBody>;
+
 // Messages
 
 export const MESSAGES_PAGE_SIZE = 50;

@@ -113,7 +113,7 @@ describe("projets", () => {
     const projectId = created.json.project.id;
     await t.call("PATCH", `/projects/${projectId}`, { token: membre.token, body: { name: "Site" } });
     expect((await t.workspace(chef.token)).teams[0]?.projects).toEqual([
-      { id: projectId, teamId: team.id, name: "Site" },
+      { id: projectId, teamId: team.id, name: "Site", repo: null },
     ]);
 
     expect(

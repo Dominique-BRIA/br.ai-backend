@@ -27,10 +27,18 @@ export const member = z.object({
 });
 export type Member = z.infer<typeof member>;
 
+/** Dépôt GitHub branché au projet : « propriétaire/nom » et sa branche principale. */
+export const projectRepo = z.object({
+  fullName: z.string(),
+  defaultBranch: z.string(),
+});
+export type ProjectRepo = z.infer<typeof projectRepo>;
+
 export const project = z.object({
   id: z.uuid(),
   teamId: z.uuid(),
   name: z.string(),
+  repo: projectRepo.nullable(),
 });
 export type Project = z.infer<typeof project>;
 
@@ -178,6 +186,12 @@ export const order = z.object({
   summary: z.string().nullable(),
   /** Fichiers modifiés, relatifs au dossier du projet. */
   changedFiles: z.array(z.string()),
+  /** Branche Git de la commande (bria/<numéro>-<titre>), quand le projet a un dépôt. */
+  branch: z.string().nullable(),
+  /** Dernier commit du cuisinier sur cette branche. */
+  commit: z.string().nullable(),
+  /** La branche a été poussée sur GitHub. */
+  pushed: z.boolean(),
   /** Dernières étapes, de la plus ancienne à la plus récente. */
   steps: z.array(orderStep),
   createdAt: z.iso.datetime(),
