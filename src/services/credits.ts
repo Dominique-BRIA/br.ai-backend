@@ -27,6 +27,9 @@ export interface CreditRates {
 export type Plan = typeof plans.$inferSelect;
 
 const FALLBACK_RATES: CreditRates = { default: { input: 1, output: 3 }, models: {} };
+/** Ce qu'un code d'invitation offre à une équipe : chaque mois, pendant quelques mois. */
+export const INVITATION_CREDITS = 2000;
+export const INVITATION_MONTHS = 3;
 /** À partir de cette part du quota, le chef est prévenu. */
 const WARNING_RATIO = 0.8;
 
@@ -143,7 +146,7 @@ export async function afterAiUsage(ctx: AppContext, teamId: string, projectId: s
     teamId,
     kind: "serveur",
     body: exceeded
-      ? `L'équipe a utilisé tous ses crédits du mois (${amount}). Les nouvelles commandes au cuisinier sont refusées jusqu'au mois prochain ; je continue de répondre dans le chat. Le chef peut saisir un code ou changer de formule.`
+      ? `L'équipe a utilisé tous ses crédits du mois (${amount}). L'IA ne répond plus et les nouvelles commandes sont refusées jusqu'au mois prochain. Le chef peut saisir un code ou changer de formule.`
       : `L'équipe a utilisé ${Math.round(ratio * 100)} % de ses crédits du mois (${amount}).`,
     mentions: chefs.map((chef) => chef.userId),
   });

@@ -43,7 +43,16 @@ describe("demandes d'accès à la bêta", () => {
     expect(resent.json.code).toBe(invite.json.code);
     expect(t.mailer.sent.length).toBe(sentBefore + 1);
 
-    await t.signUp("lea@exemple.org", "Léa", invite.json.code);
+    // Le code sert quand une équipe le saisit.
+    const lea = await t.signUp("lea@exemple.org", "Léa");
+    const team = await t.call<{ team: { id: string } }>("POST", "/teams", {
+      token: lea.token,
+      body: { name: "Équipe de Léa" },
+    });
+    await t.call("POST", `/teams/${team.json.team.id}/promo`, {
+      token: lea.token,
+      body: { code: invite.json.code },
+    });
     const list = await t.call<{ requests: (BetaRequest & { joined: boolean })[] }>(
       "GET",
       "/admin/beta-requests",

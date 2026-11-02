@@ -8,22 +8,8 @@ beforeAll(async () => {
 afterAll(() => t.stop());
 
 describe("connexion par e-mail", () => {
-  it("refuse de créer un compte sans invitation", async () => {
-    const response = await t.call("POST", "/auth/code", { body: { email: "sans@exemple.org" } });
-    expect(response.status).toBe(403);
-    expect(response.json).toMatchObject({ error: { code: "invitation_required" } });
-  });
-
-  it("refuse une invitation inconnue", async () => {
-    const response = await t.call("POST", "/auth/code", {
-      body: { email: "faux@exemple.org", invitationCode: "BETA-XXXX-XXXX" },
-    });
-    expect(response.json).toMatchObject({ error: { code: "invitation_invalid" } });
-  });
-
   it("un envoi qui échoue ne bloque pas une nouvelle demande", async () => {
-    const invite = await t.betaInvite(1);
-    const body = { email: "envoi@exemple.org", invitationCode: invite };
+    const body = { email: "envoi@exemple.org" };
     t.mailer.failNext = 1;
     const failed = await t.call("POST", "/auth/code", { body });
     expect(failed.status).toBe(502);
@@ -33,11 +19,10 @@ describe("connexion par e-mail", () => {
     expect(t.mailer.lastCodeFor("envoi@exemple.org")).toMatch(/^\d{6}$/);
   });
 
-  it("crée un compte avec une invitation, puis reconnecte sans invitation", async () => {
-    const invite = await t.betaInvite(1);
+  it("crée un compte sans invitation, puis reconnecte", async () => {
     const email = "Awa@Exemple.org";
 
-    const first = await t.call("POST", "/auth/code", { body: { email, invitationCode: invite } });
+    const first = await t.call("POST", "/auth/code", { body: { email } });
     expect(first.json).toEqual({ newAccount: true });
 
     const code = t.mailer.lastCodeFor("awa@exemple.org");
@@ -54,20 +39,13 @@ describe("connexion par e-mail", () => {
     expect(created.status).toBe(200);
     expect(created.json.user).toMatchObject({ email: "awa@exemple.org", displayName: "Awa" });
 
-    // L'invitation à usage unique est épuisée.
-    const reused = await t.call("POST", "/auth/code", {
-      body: { email: "autre@exemple.org", invitationCode: invite },
-    });
-    expect(reused.json).toMatchObject({ error: { code: "invitation_invalid" } });
-
-    // Le compte existe : plus besoin d'invitation (mais il faut attendre une minute entre deux codes).
+    // Le compte existe : il faut attendre une minute entre deux codes.
     const tooSoon = await t.call("POST", "/auth/code", { body: { email } });
     expect(tooSoon.json).toMatchObject({ error: { code: "too_many_requests" } });
   });
 
   it("bloque après cinq codes erronés", async () => {
-    const invite = await t.betaInvite();
-    await t.call("POST", "/auth/code", { body: { email: "essais@exemple.org", invitationCode: invite } });
+    await t.call("POST", "/auth/code", { body: { email: "essais@exemple.org" } });
     const good = t.mailer.lastCodeFor("essais@exemple.org");
     const wrong = good === "000000" ? "111111" : "000000";
     for (let i = 0; i < 5; i++) {
@@ -100,8 +78,7 @@ describe("connexion par e-mail", () => {
 
 describe("e-mail de connexion", () => {
   it("contient le code en texte et dans une version HTML mise en forme", async () => {
-    const invite = await t.betaInvite();
-    await t.call("POST", "/auth/code", { body: { email: "html@exemple.org", invitationCode: invite } });
+    await t.call("POST", "/auth/code", { body: { email: "html@exemple.org" } });
     const mail = t.mailer.sent.findLast((candidate) => candidate.to === "html@exemple.org");
     const code = t.mailer.lastCodeFor("html@exemple.org");
     expect(mail?.subject).toBe(`Votre code de connexion <br/> : ${code}`);

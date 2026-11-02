@@ -9,6 +9,9 @@ import { addMemory, announceMemoryChange, listMemory, setMemoryStatus } from "..
 import { postAgentMessage, toMessages } from "../services/messages.ts";
 import type { Kitchen } from "./cuisinier.ts";
 
+/** Sans mention de l'agent, le manque de crédit n'est rappelé qu'une fois par jour dans un projet. */
+const CREDIT_NOTICE_INTERVAL_MS = 24 * 60 * 60_000;
+
 /** Nombre de messages récents donnés à l'agent comme contexte. */
 const HISTORY = 30;
 
@@ -117,6 +120,8 @@ interface Member {
  */
 export class ServeurAgent {
   readonly #queues = new Map<string, Promise<void>>();
+  /** Dernier message « Crédit insuffisant » de chaque projet. */
+  readonly #creditNotices = new Map<string, number>();
   private readonly ctx: AppContext;
   private readonly ai: Ai;
   private readonly chain: ModelChoice[];
@@ -149,6 +154,7 @@ export class ServeurAgent {
 
   /** Résume à un membre qui revient les messages échangés pendant son absence. */
   async summarize(request: CatchUpRequest): Promise<string | null> {
+    if (await quotaReached(this.ctx, request.teamId)) return null;
     const transcript = request.messages.map(
       (entry) =>
         `[${entry.createdAt.slice(0, 16).replace("T", " ")}] ${authorLabel(entry.author)} : ${entry.body}`,
@@ -185,6 +191,23 @@ export class ServeurAgent {
     if (message.author.kind !== "member") return;
     const author = message.author;
     const mentioned = BRIA_MENTION.test(message.body);
+
+    // Sans crédit disponible, aucun appel à l'IA. Une demande à l'agent reçoit toujours la raison ;
+    // une discussion entre membres, au plus une fois par jour, pour ne pas envahir le fil.
+    if (await quotaReached(this.ctx, teamId)) {
+      const last = this.#creditNotices.get(message.projectId) ?? 0;
+      if (mentioned || Date.now() - last >= CREDIT_NOTICE_INTERVAL_MS) {
+        this.#creditNotices.set(message.projectId, Date.now());
+        await postAgentMessage(this.ctx, {
+          projectId: message.projectId,
+          teamId,
+          kind: "serveur",
+          body: "**Crédit insuffisant** : l'IA ne peut pas répondre. Le chef d'équipe peut saisir un code d'invitation dans l'onglet Équipe, ou en demander un sur br.garah.me.",
+          replyToId: message.id,
+        });
+      }
+      return;
+    }
 
     const [members, history, memory] = await Promise.all([
       this.#members(teamId),

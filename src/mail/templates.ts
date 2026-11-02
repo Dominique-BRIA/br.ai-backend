@@ -1,4 +1,5 @@
 import type { Locale } from "@br-ia/protocol";
+import { INVITATION_CREDITS, INVITATION_MONTHS } from "../services/credits.ts";
 import type { Mail } from "./mailer.ts";
 
 /*
@@ -101,15 +102,15 @@ export function loginCodeMail(
   return { to, subject: t.subject(code), text, html };
 }
 
-/** Réponse à une demande d'accès laissée sur le site : le code d'invitation à la bêta. */
+/** Réponse à une demande laissée sur le site : le code d'invitation, qui donne des crédits d'IA. */
 export function betaInviteMail(to: string, code: string, expiresAt: Date): Mail {
   const until = expiresAt.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
-  const title = "Votre invitation à la bêta";
+  const title = "Vos crédits d'IA";
   const intro = (brand: string) =>
-    `Vous avez demandé à essayer ${brand} : votre place est prête. Voici votre code d'invitation.`;
+    `Voici votre code d'invitation à ${brand}. Il offre à votre équipe ${INVITATION_CREDITS} crédits d'IA par mois pendant ${INVITATION_MONTHS} mois.`;
   const steps = (brand: string) =>
-    `Installez l'extension ${brand} dans VS Code, ouvrez son panneau, puis saisissez votre adresse e-mail et ce code.`;
-  const validity = `Il est valable jusqu'au ${until}, pour un seul compte.`;
+    `Installez l'extension ${brand} dans VS Code, créez votre compte et votre équipe, puis saisissez ce code dans l'onglet Équipe, avec « Saisir un code ».`;
+  const validity = `Il est valable jusqu'au ${until}, pour une seule équipe.`;
   const footer = (brand: string) => `${brand} · redonner un sens au travail d'équipe`;
   const text = `${title} : ${code}\n\n${intro(BRAND)}\n\n${steps(BRAND)} ${validity}\n\n${footer(BRAND)}`;
   const html = `<!doctype html>
@@ -139,5 +140,5 @@ export function betaInviteMail(to: string, code: string, expiresAt: Date): Mail 
 </table>
 </body>
 </html>`;
-  return { to, subject: `Votre invitation à la bêta de ${BRAND}`, text, html };
+  return { to, subject: `Vos crédits d'IA pour ${BRAND}`, text, html };
 }

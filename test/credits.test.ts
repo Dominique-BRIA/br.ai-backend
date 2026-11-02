@@ -91,22 +91,16 @@ describe("crédits et quotas", () => {
     ]);
   });
 
-  it("refuse les nouvelles commandes quand le quota est atteint", async () => {
-    ai.replies.push({
-      category: "request",
-      reply: "Je passe la commande au cuisinier.",
-      memory: [],
-      order: { title: "Plan du mémoire", brief: "Écrire le plan." },
-    });
+  it("n'appelle plus l'IA quand le quota est atteint et dit pourquoi", async () => {
     await t.call<{ message: Message }>("POST", `/projects/${projectId}/messages`, {
       token: ali.token,
-      body: { body: "Peux-tu écrire le plan du mémoire ?" },
+      body: { body: "@bria peux-tu écrire le plan du mémoire ?" },
     });
     await t.serveur?.idle();
     const { messages } = (
       await t.call<{ messages: Message[] }>("GET", `/projects/${projectId}/messages`, { token: chef.token })
     ).json;
-    expect(messages.at(-1)?.body).toContain("Je ne peux pas passer cette commande");
+    expect(messages.at(-1)?.body).toContain("Crédit insuffisant");
     const orders = await t.call<{ orders: unknown[] }>("GET", `/projects/${projectId}/orders`, {
       token: chef.token,
     });

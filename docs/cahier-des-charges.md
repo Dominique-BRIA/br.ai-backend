@@ -43,15 +43,15 @@ Chaque exigence porte un identifiant (`F-CPT-01`, etc.) et une priorité :
 
 ### 3.1 Comptes et connexion
 
-| ID       | Exigence                                                                                                                              | Priorité  |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------- | --------- |
-| F-CPT-01 | Créer un compte depuis l'extension VS Code avec une adresse e-mail et un code de vérification envoyé par e-mail. Pas de mot de passe. | Bêta      |
-| F-CPT-02 | Se connecter de la même façon. La session reste ouverte sur la machine jusqu'à déconnexion.                                           | Bêta      |
-| F-CPT-03 | Pendant la bêta, l'inscription n'est possible qu'avec un code d'invitation.                                                           | Bêta      |
-| F-CPT-04 | Profil : nom affiché, langue (français ou anglais), photo facultative.                                                                | Bêta      |
-| F-CPT-05 | Déconnecter une machine à distance depuis une autre.                                                                                  | Bêta      |
-| F-CPT-06 | Supprimer son compte. Ses messages restent dans les projets, signés « ancien membre ».                                                | Bêta      |
-| F-CPT-07 | Connexion avec GitHub.                                                                                                                | Plus tard |
+| ID       | Exigence                                                                                                                                  | Priorité  |
+| -------- | ----------------------------------------------------------------------------------------------------------------------------------------- | --------- |
+| F-CPT-01 | Créer un compte depuis l'extension VS Code avec une adresse e-mail et un code de vérification envoyé par e-mail. Pas de mot de passe.     | Bêta      |
+| F-CPT-02 | Se connecter de la même façon. La session reste ouverte sur la machine jusqu'à déconnexion.                                               | Bêta      |
+| F-CPT-03 | L'inscription est ouverte à tous. Le code d'invitation donne des crédits d'IA à l'équipe qui le saisit ; sans crédit, l'IA ne répond pas. | Bêta      |
+| F-CPT-04 | Profil : nom affiché, langue (français ou anglais), photo facultative.                                                                    | Bêta      |
+| F-CPT-05 | Déconnecter une machine à distance depuis une autre.                                                                                      | Bêta      |
+| F-CPT-06 | Supprimer son compte. Ses messages restent dans les projets, signés « ancien membre ».                                                    | Bêta      |
+| F-CPT-07 | Connexion avec GitHub.                                                                                                                    | Plus tard |
 
 ### 3.2 Équipes et projets
 
@@ -283,7 +283,7 @@ Sur le site, réservé aux administrateurs.
 | -------- | -------------------------------------------------------------------------------------------------------------------------------- | --------- |
 | F-WEB-01 | Une page de présentation en français et en anglais.                                                                              | Bêta      |
 | F-WEB-02 | Un lien d'installation de l'extension (Marketplace et Open VSX).                                                                 | Bêta      |
-| F-WEB-03 | Une page pour demander une invitation à la bêta.                                                                                 | Bêta      |
+| F-WEB-03 | Une page pour demander un code d'invitation, qui donne des crédits d'IA.                                                         | Bêta      |
 | F-WEB-04 | Les pages légales : conditions d'utilisation et politique de confidentialité, qui mentionnent l'usage des offres d'IA gratuites. | Bêta      |
 | F-WEB-05 | Le paiement.                                                                                                                     | Plus tard |
 

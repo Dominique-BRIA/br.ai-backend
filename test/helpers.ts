@@ -6,9 +6,11 @@ import {
   type Workspace,
   WS_PATH,
 } from "@br-ia/protocol";
+import { eq } from "drizzle-orm";
 import WebSocket from "ws";
 import { type AppOptions, buildApp } from "../src/app.ts";
 import { openDatabase } from "../src/db/client.ts";
+import { plans } from "../src/db/schema.ts";
 import type { Mail, Mailer } from "../src/mail/mailer.ts";
 
 export const ADMIN_TOKEN = "jeton-admin-de-test-0123456789";
@@ -34,7 +36,13 @@ export class MemoryMailer implements Mailer {
 }
 
 export async function startApp(
-  options: Pick<AppOptions, "ai" | "serveurChain" | "cuisinierChain" | "vault" | "githubApp"> = {},
+  options: Pick<
+    AppOptions,
+    "ai" | "serveurChain" | "cuisinierChain" | "vault" | "githubApp" | "newAccountCodesPerHour"
+  > & {
+    /** Crédits mensuels de la formule d'essai : les tests partent d'une équipe qui peut utiliser l'IA. */
+    essaiCredits?: number;
+  } = {},
 ) {
   const database = await openDatabase();
   const mailer = new MemoryMailer();
@@ -43,8 +51,13 @@ export async function startApp(
     mailer,
     adminToken: ADMIN_TOKEN,
     helloTimeoutMs: 300,
+    newAccountCodesPerHour: Number.POSITIVE_INFINITY,
     ...options,
   });
+  await database.db
+    .update(plans)
+    .set({ monthlyCredits: options.essaiCredits ?? 2000 })
+    .where(eq(plans.id, "essai"));
   const address = await app.listen({ host: "127.0.0.1", port: 0 });
   const wsUrl = `${address.replace("http", "ws")}${WS_PATH}`;
 
@@ -74,12 +87,13 @@ export async function startApp(
   }
 
   /** Crée un compte avec une invitation et renvoie son jeton de session. */
-  async function signUp(email: string, displayName: string, invitationCode?: string) {
-    const code = invitationCode ?? (await betaInvite());
-    await call("POST", "/auth/code", { body: { email, invitationCode: code } });
+  /** Crée un compte ; avec une clé d'équipe, il rejoint aussi cette équipe. */
+  async function signUp(email: string, displayName: string, teamKey?: string) {
+    await call("POST", "/auth/code", { body: { email } });
     const { json } = await call<{ token: string; user: { id: string } }>("POST", "/auth/verify", {
       body: { email, code: mailer.lastCodeFor(email), machineId: `machine-${email}`, displayName },
     });
+    if (teamKey) await call("POST", "/invitations/accept", { token: json.token, body: { code: teamKey } });
     return { token: json.token, userId: json.user.id };
   }
 

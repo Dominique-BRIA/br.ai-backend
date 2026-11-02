@@ -1,12 +1,12 @@
 import { randomBytes } from "node:crypto";
 import type { createPromoBody, PromoCode } from "@br-ia/protocol";
-import { and, count, eq, sql } from "drizzle-orm";
+import { and, count, eq, lt, sql } from "drizzle-orm";
 import type { z } from "zod";
 import { newInvitationCode } from "../auth/secrets.ts";
 import type { AppContext } from "../context.ts";
 import { betaInvites, creditGrants, plans, promoCodes, promoRedemptions, teams } from "../db/schema.ts";
 import { HttpError } from "../http/errors.ts";
-import { currentMonth, teamPlan } from "./credits.ts";
+import { currentMonth, INVITATION_CREDITS, INVITATION_MONTHS, teamPlan } from "./credits.ts";
 
 type PromoRow = typeof promoCodes.$inferSelect;
 /** Corps validé d'une création de codes. */
@@ -30,6 +30,8 @@ export async function redeemPromo(
   raw: string,
 ): Promise<string> {
   const code = raw.trim().toUpperCase();
+  const [invite] = await ctx.db.select().from(betaInvites).where(eq(betaInvites.code, code));
+  if (invite) return redeemInvitation(ctx, teamId, invite);
   const [promo] = await ctx.db.select().from(promoCodes).where(eq(promoCodes.code, code));
   if (!promo || promo.disabledAt) throw new HttpError(404, "promo_invalid", "Ce code n'est pas valable.");
   if (promo.expiresAt && promo.expiresAt.getTime() < Date.now()) {
@@ -67,6 +69,57 @@ export async function redeemPromo(
     .where(eq(promoCodes.id, promo.id));
   await ctx.db.insert(promoRedemptions).values({ codeId: promo.id, userId, teamId });
   return message;
+}
+
+/** Un code d'invitation donne des crédits d'IA à l'équipe, une seule fois par équipe. */
+async function redeemInvitation(
+  ctx: AppContext,
+  teamId: string,
+  invite: typeof betaInvites.$inferSelect,
+): Promise<string> {
+  if (invite.expiresAt && invite.expiresAt.getTime() < Date.now()) {
+    throw new HttpError(410, "promo_expired", "Ce code a expiré.");
+  }
+  const source = `invitation ${invite.code}`;
+  const [already] = await ctx.db
+    .select({ total: count() })
+    .from(creditGrants)
+    .where(and(eq(creditGrants.teamId, teamId), eq(creditGrants.source, source)));
+  if ((already?.total ?? 0) > 0) {
+    throw new HttpError(409, "promo_already_used", "Votre équipe a déjà utilisé ce code.");
+  }
+  // La mise à jour conditionnelle empêche deux équipes de prendre la dernière utilisation.
+  const [claimed] = await ctx.db
+    .update(betaInvites)
+    .set({ uses: sql`${betaInvites.uses} + 1` })
+    .where(and(eq(betaInvites.id, invite.id), lt(betaInvites.uses, betaInvites.maxUses)))
+    .returning({ id: betaInvites.id });
+  if (!claimed) {
+    throw new HttpError(410, "promo_exhausted", "Ce code a déjà été utilisé le nombre de fois prévu.");
+  }
+  await grantMonthly(ctx, teamId, INVITATION_CREDITS, INVITATION_MONTHS, source);
+  return `${INVITATION_CREDITS} crédits d'IA chaque mois pendant ${INVITATION_MONTHS} mois.`;
+}
+
+/** Ajoute les mêmes crédits à chacun des prochains mois, à partir du mois en cours. */
+async function grantMonthly(
+  ctx: AppContext,
+  teamId: string,
+  credits: number,
+  months: number,
+  source: string,
+): Promise<void> {
+  const start = new Date();
+  await ctx.db.insert(creditGrants).values(
+    Array.from({ length: months }, (_, index) => ({
+      teamId,
+      credits,
+      month: currentMonth(
+        addMonths(new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1)), index),
+      ),
+      source,
+    })),
+  );
 }
 
 async function applyPromo(
@@ -111,17 +164,7 @@ async function applyPromo(
     }
     case "credits": {
       const months = promo.durationMonths ?? 1;
-      const start = new Date();
-      await ctx.db.insert(creditGrants).values(
-        Array.from({ length: months }, (_, index) => ({
-          teamId,
-          credits: promo.credits ?? 0,
-          month: currentMonth(
-            addMonths(new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 1)), index),
-          ),
-          source: `code ${promo.code}`,
-        })),
-      );
+      await grantMonthly(ctx, teamId, promo.credits ?? 0, months, `code ${promo.code}`);
       return months > 1
         ? `${promo.credits} crédits en plus chaque mois pendant ${months} mois.`
         : `${promo.credits} crédits en plus ce mois-ci.`;

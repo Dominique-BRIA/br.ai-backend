@@ -51,6 +51,7 @@ export const apiErrorCode = z.enum([
   "mail_failed",
   "order_not_ready",
   "github_failed",
+  "signup_limited",
 ]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 
@@ -71,8 +72,6 @@ const name = z.string().trim().min(1).max(80);
 /** POST /auth/code — envoie un code de connexion par e-mail. */
 export const requestCodeBody = z.object({
   email,
-  /** Obligatoire pour créer un compte pendant la bêta : code d'invitation à la bêta ou à une équipe. */
-  invitationCode: invitationCode.optional(),
 });
 export type RequestCodeBody = z.input<typeof requestCodeBody>;
 export const requestCodeResponse = z.object({

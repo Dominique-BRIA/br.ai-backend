@@ -4,26 +4,47 @@ import {
   type VerifyCodeResponse,
   verifyCodeBody,
 } from "@br-ia/protocol";
-import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
-import type { FastifyInstance } from "fastify";
-import { loginCodeHash, newLoginCode, normalizeInvitationCode } from "../auth/secrets.ts";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import { loginCodeHash, newLoginCode } from "../auth/secrets.ts";
 import { bearerToken, openSession, revokeSession } from "../auth/sessions.ts";
 import type { AppContext } from "../context.ts";
-import { betaInvites, loginCodes, teamInvitations, teamMembers, users } from "../db/schema.ts";
+import { loginCodes, users } from "../db/schema.ts";
 import { HttpError, parse } from "../http/errors.ts";
 import { loginCodeMail } from "../mail/templates.ts";
-import { memberIds } from "../services/access.ts";
-import { requireWithinPlan } from "../services/credits.ts";
 
 export const CODE_TTL_MS = 10 * 60_000;
 export const MAX_ATTEMPTS = 5;
 export const RESEND_DELAY_MS = 60_000;
 
-type Invitation = { kind: "beta" | "team"; id: string; teamId?: string };
+/** L'inscription est libre : cette limite empêche de s'en servir pour envoyer des e-mails en masse. */
+const NEW_ACCOUNT_WINDOW_MS = 60 * 60_000;
+export const NEW_ACCOUNT_CODES_PER_HOUR = 10;
 
-export function authRoutes(app: FastifyInstance, ctx: AppContext): void {
+export function authRoutes(
+  app: FastifyInstance,
+  ctx: AppContext,
+  newAccountCodesPerHour = NEW_ACCOUNT_CODES_PER_HOUR,
+): void {
+  const recentCodes = new Map<string, number[]>();
+
+  const limitNewAccounts = (request: FastifyRequest) => {
+    const now = Date.now();
+    if (recentCodes.size > 10_000) recentCodes.clear();
+    const visitor = visitorAddress(request);
+    const times = (recentCodes.get(visitor) ?? []).filter((time) => now - time < NEW_ACCOUNT_WINDOW_MS);
+    if (times.length >= newAccountCodesPerHour) {
+      throw new HttpError(
+        429,
+        "signup_limited",
+        "Trop de comptes créés depuis cette connexion. Réessayez dans une heure.",
+      );
+    }
+    recentCodes.set(visitor, [...times, now]);
+  };
+
   app.post("/auth/code", async (request): Promise<RequestCodeResponse> => {
-    const { email, invitationCode } = parse(requestCodeBody, request.body);
+    const { email } = parse(requestCodeBody, request.body);
     const [existing] = await ctx.db
       .select({ id: users.id, locale: users.locale, suspendedAt: users.suspendedAt })
       .from(users)
@@ -32,21 +53,7 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext): void {
       throw new HttpError(403, "account_suspended", "Ce compte est suspendu. Contactez l'équipe de <br/>.");
     }
 
-    let invitation: Invitation | null = null;
-    if (!existing) {
-      if (!invitationCode) {
-        throw new HttpError(
-          403,
-          "invitation_required",
-          "Un code d'invitation est nécessaire pour créer un compte.",
-        );
-      }
-      invitation = await findInvitation(ctx, invitationCode);
-      if (!invitation)
-        throw new HttpError(403, "invitation_invalid", "Ce code d'invitation n'est pas valable.");
-      if (invitation.kind === "team" && invitation.teamId)
-        await requireWithinPlan(ctx, invitation.teamId, "members");
-    }
+    if (!existing) limitNewAccounts(request);
 
     const [recent] = await ctx.db
       .select({ createdAt: loginCodes.createdAt })
@@ -69,8 +76,6 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext): void {
         email,
         codeHash: loginCodeHash(email, code),
         expiresAt: new Date(Date.now() + CODE_TTL_MS),
-        invitationKind: invitation?.kind,
-        invitationId: invitation?.id,
       })
       .returning({ id: loginCodes.id });
     try {
@@ -120,15 +125,8 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext): void {
     await ctx.db.update(loginCodes).set({ consumedAt: new Date() }).where(eq(loginCodes.id, pending.id));
 
     if (!user && displayName) {
-      const invitation =
-        pending.invitationKind && pending.invitationId
-          ? await invitationById(ctx, pending.invitationKind, pending.invitationId)
-          : null;
-      if (!invitation)
-        throw new HttpError(403, "invitation_invalid", "Ce code d'invitation n'est plus valable.");
       [user] = await ctx.db.insert(users).values({ email, displayName }).returning();
       if (!user) throw new Error("Création du compte impossible.");
-      await consumeInvitation(ctx, invitation, user.id);
     }
     if (!user) throw new HttpError(401, "code_invalid", "Code incorrect.");
 
@@ -147,68 +145,13 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext): void {
 }
 
 /** Cherche une invitation valable : d'abord à la bêta, puis à une équipe. */
-async function findInvitation(ctx: AppContext, rawCode: string): Promise<Invitation | null> {
-  const code = normalizeInvitationCode(rawCode);
-  const now = new Date();
-  const [beta] = await ctx.db
-    .select({
-      id: betaInvites.id,
-      uses: betaInvites.uses,
-      maxUses: betaInvites.maxUses,
-      expiresAt: betaInvites.expiresAt,
-    })
-    .from(betaInvites)
-    .where(eq(betaInvites.code, code));
-  if (beta && beta.uses < beta.maxUses && (!beta.expiresAt || beta.expiresAt > now)) {
-    return { kind: "beta", id: beta.id };
-  }
-  const [team] = await ctx.db
-    .select({ id: teamInvitations.id, teamId: teamInvitations.teamId })
-    .from(teamInvitations)
-    .where(
-      and(
-        eq(teamInvitations.code, code),
-        isNull(teamInvitations.revokedAt),
-        gt(teamInvitations.expiresAt, now),
-      ),
-    );
-  return team ? { kind: "team", id: team.id, teamId: team.teamId } : null;
-}
 
-async function invitationById(
-  ctx: AppContext,
-  kind: "beta" | "team",
-  id: string,
-): Promise<Invitation | null> {
-  if (kind === "beta") {
-    const [beta] = await ctx.db.select().from(betaInvites).where(eq(betaInvites.id, id));
-    return beta && beta.uses < beta.maxUses && (!beta.expiresAt || beta.expiresAt > new Date())
-      ? { kind, id }
-      : null;
-  }
-  const [team] = await ctx.db
-    .select()
-    .from(teamInvitations)
-    .where(
-      and(
-        eq(teamInvitations.id, id),
-        isNull(teamInvitations.revokedAt),
-        gt(teamInvitations.expiresAt, new Date()),
-      ),
-    );
-  return team ? { kind, id, teamId: team.teamId } : null;
-}
-
-/** Une invitation à la bêta est décomptée ; une invitation d'équipe fait entrer le nouveau compte dans l'équipe. */
-async function consumeInvitation(ctx: AppContext, invitation: Invitation, userId: string): Promise<void> {
-  if (invitation.kind === "beta") {
-    await ctx.db
-      .update(betaInvites)
-      .set({ uses: sql`${betaInvites.uses} + 1` })
-      .where(eq(betaInvites.id, invitation.id));
-    return;
-  }
-  if (!invitation.teamId) return;
-  await ctx.db.insert(teamMembers).values({ teamId: invitation.teamId, userId, role: "membre" });
-  ctx.hub.sendTo(await memberIds(ctx, invitation.teamId), { type: "workspace.changed" });
+/**
+ * L'adresse du visiteur. Azure ajoute la vraie adresse à la fin de x-forwarded-for, parfois avec
+ * son port : le début de l'en-tête vient du client et peut être inventé.
+ */
+function visitorAddress(request: FastifyRequest): string {
+  const forwarded = request.headers["x-forwarded-for"];
+  const last = typeof forwarded === "string" ? forwarded.split(",").at(-1)?.trim() : undefined;
+  return last ? last.replace(/^(\d+\.\d+\.\d+\.\d+):\d+$/, "$1") : request.ip;
 }

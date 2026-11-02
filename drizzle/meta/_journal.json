@@ -134,6 +134,13 @@
       "when": 1793645392604,
       "tag": "0018_application_github",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793649265760,
+      "tag": "0019_essai_sans_credits",
+      "breakpoints": true
     }
   ]
 }

@@ -49,6 +49,8 @@ export interface AppOptions {
   /** Application GitHub ; sans elle, tout passe par la connexion de chaque membre. */
   githubApp?: GitHubApp | null;
   helloTimeoutMs?: number;
+  /** Codes de connexion par heure et par adresse pour de nouveaux comptes. */
+  newAccountCodesPerHour?: number;
 }
 
 export async function buildApp(options: AppOptions) {
@@ -101,7 +103,7 @@ export async function buildApp(options: AppOptions) {
     handleConnection(socket, { ctx, serverVersion: SERVER_VERSION, helloTimeoutMs: options.helloTimeoutMs });
   });
 
-  await app.register(async (scope) => authRoutes(scope, ctx));
+  await app.register(async (scope) => authRoutes(scope, ctx, options.newAccountCodesPerHour));
   await app.register(async (scope) => adminAuthRoutes(scope, ctx));
   await app.register(async (scope) => betaRequestRoutes(scope, ctx));
   await app.register(async (scope) => {
