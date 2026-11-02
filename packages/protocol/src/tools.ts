@@ -80,6 +80,8 @@ export const gitTools = {
     input: z.object({
       branch: z.string().regex(orderBranchPattern),
       message: z.string().min(1).max(4000),
+      /** Relais : le membre a déjà donné son accord, on pousse sans redemander. */
+      push: z.boolean().optional(),
     }),
   },
 } as const;

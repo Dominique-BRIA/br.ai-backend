@@ -287,6 +287,9 @@ export const orders = pgTable(
     pullRequestNumber: integer(),
     pullRequestUrl: text(),
     mergedAt: timestamp({ withTimezone: true }),
+    /** Note de reprise, et machine quittée : le relais ne doit pas y revenir. */
+    handoffNote: text(),
+    relayFromSessionId: uuid().references(() => sessions.id, { onDelete: "set null" }),
     steps: jsonb().$type<OrderStepRow[]>().notNull().default([]),
     createdAt: createdAt(),
     updatedAt: timestamp({ withTimezone: true }).notNull().defaultNow(),

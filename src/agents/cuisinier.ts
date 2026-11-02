@@ -34,6 +34,14 @@ const finishInput = z.object({
   summary: z.string().min(1).max(6000),
 });
 
+const handoffInput = z.object({
+  done: z.string().min(1).max(3000),
+  remaining: z.string().min(1).max(3000),
+  commands: z.array(z.string().max(300)).max(20),
+});
+/** Tours laissés à l'IA pour rédiger sa note avant que le relais se fasse sans elle. */
+const MAX_RELAY_NUDGES = 2;
+
 const TOOLS: ToolDefinition[] = [
   ...Object.entries(cookTools).map(([name, tool]) => ({
     type: "function" as const,
@@ -50,6 +58,15 @@ const TOOLS: ToolDefinition[] = [
       description:
         "Termine la commande avec un bilan pour l'équipe : ce qui a été fait, fichiers modifiés, tests lancés et leur résultat, ce qui reste à faire.",
       parameters: z.toJSONSchema(finishInput) as Record<string, unknown>,
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "handoff",
+      description:
+        "Passe la commande à une autre machine, uniquement quand on te le demande : ce qui est fait, ce qui reste à faire, et les commandes à relancer sur la nouvelle machine (installation, tests, serveur).",
+      parameters: z.toJSONSchema(handoffInput) as Record<string, unknown>,
     },
   },
 ];
@@ -83,6 +100,12 @@ class StoppedError extends Error {}
 
 type OrderRow = typeof orders.$inferSelect;
 
+/** Demande de relais adressée à une commande en cours. */
+interface RelayRequest {
+  requested: boolean;
+  nudges: number;
+}
+
 /** Ce que le reste du serveur signale à la cuisine. */
 export interface KitchenHooks {
   onMachineStatus(): void;
@@ -98,7 +121,10 @@ export class Kitchen implements KitchenHooks {
   readonly #ctx: AppContext;
   readonly #ai: Ai;
   readonly #chain: ModelChoice[];
-  readonly #active = new Map<string, { orderId: string; controller: AbortController; done: Promise<void> }>();
+  readonly #active = new Map<
+    string,
+    { orderId: string; controller: AbortController; done: Promise<void>; relay: RelayRequest }
+  >();
   readonly #calls = new Map<string, PendingCall>();
 
   constructor(ctx: AppContext, ai: Ai, chain: ModelChoice[]) {
@@ -166,6 +192,30 @@ export class Kitchen implements KitchenHooks {
       .set({ ...values, updatedAt: new Date() })
       .where(eq(orders.id, orderId));
     return this.#publish(orderId, teamId);
+  }
+
+  /**
+   * Demande à la commande en cours de passer à une autre machine. Le cuisinier termine son étape,
+   * laisse sa note et pousse la branche ; il faut donc un dépôt GitHub. Faux si ce n'est pas possible.
+   */
+  async relay(orderId: string, teamId: string): Promise<boolean> {
+    const active = [...this.#active.values()].find((entry) => entry.orderId === orderId);
+    if (!active) return false;
+    const [row] = await this.#ctx.db
+      .select({ branch: orders.branch })
+      .from(orders)
+      .where(eq(orders.id, orderId));
+    if (!row?.branch) return false;
+    if (!active.relay.requested) {
+      active.relay.requested = true;
+      await this.#step(
+        orderId,
+        "info",
+        "Relais demandé : le cuisinier termine son étape et prépare sa note.",
+      );
+      await this.#publish(orderId, teamId);
+    }
+    return true;
   }
 
   /** Arrête une commande en attente ou en cours. */
@@ -241,7 +291,12 @@ export class Kitchen implements KitchenHooks {
 
   /** La machine du demandeur d'abord ; sinon celle d'un membre qui prête la sienne. */
   async #pickMachine(order: OrderRow, teamId: string): Promise<LiveConnection | undefined> {
-    const candidates = this.#ctx.hub.all().filter((connection) => connection.projects.has(order.projectId));
+    const candidates = this.#ctx.hub
+      .all()
+      .filter(
+        (connection) =>
+          connection.projects.has(order.projectId) && connection.sessionId !== order.relayFromSessionId,
+      );
     const requester = candidates.find((connection) => connection.userId === order.requestedByUserId);
     if (requester) return requester;
     const team = new Set(await memberIds(this.#ctx, teamId));
@@ -250,7 +305,8 @@ export class Kitchen implements KitchenHooks {
 
   #start(order: OrderRow, teamId: string, machine: LiveConnection): void {
     const controller = new AbortController();
-    const done = this.#run(order, teamId, machine, controller.signal)
+    const relay: RelayRequest = { requested: false, nudges: 0 };
+    const done = this.#run(order, teamId, machine, controller.signal, relay)
       .catch((error: unknown) =>
         this.#ctx.log.error({ err: error, orderId: order.id }, "commande interrompue"),
       )
@@ -258,10 +314,16 @@ export class Kitchen implements KitchenHooks {
         this.#active.delete(order.projectId);
         void this.schedule();
       });
-    this.#active.set(order.projectId, { orderId: order.id, controller, done });
+    this.#active.set(order.projectId, { orderId: order.id, controller, done, relay });
   }
 
-  async #run(order: OrderRow, teamId: string, machine: LiveConnection, signal: AbortSignal): Promise<void> {
+  async #run(
+    order: OrderRow,
+    teamId: string,
+    machine: LiveConnection,
+    signal: AbortSignal,
+    relay: RelayRequest,
+  ): Promise<void> {
     const [owner] = await this.#ctx.db
       .select({ displayName: users.displayName })
       .from(users)
@@ -273,6 +335,7 @@ export class Kitchen implements KitchenHooks {
         status: "running",
         machineUserId: machine.userId,
         machineSessionId: machine.sessionId,
+        relayFromSessionId: null,
         updatedAt: new Date(),
       })
       .where(eq(orders.id, order.id));
@@ -321,6 +384,7 @@ export class Kitchen implements KitchenHooks {
                 `Secrets du coffre du projet (noms seulement) : ${secrets.join(", ")}. Pour un .env, utilise write_env ; ne demande jamais une valeur.`,
               ]
             : []),
+          ...resumeLines(order),
         ].join("\n"),
       },
     ];
@@ -332,6 +396,31 @@ export class Kitchen implements KitchenHooks {
       if (branch === false) return;
       for (let turn = 1; turn <= MAX_TURNS; turn++) {
         if (signal.aborted) throw new StoppedError();
+        if (relay.requested && branch) {
+          if (relay.nudges >= MAX_RELAY_NUDGES) {
+            const failure = await this.#handOff(
+              machine,
+              order,
+              teamId,
+              branch,
+              `Note non rédigée par le cuisinier. Fichiers modifiés : ${[...changed].join(", ") || "aucun"}.`,
+              signal,
+            );
+            if (!failure) return;
+            relay.requested = false;
+            messages.push({
+              role: "user",
+              content: `Le relais n'a pas pu se faire (${failure}). Continue la commande sur cette machine.`,
+            });
+          } else {
+            relay.nudges++;
+            messages.push({
+              role: "user",
+              content:
+                "Le membre passe cette commande à une autre machine. Arrête de travailler et appelle maintenant l'outil handoff, sans autre action.",
+            });
+          }
+        }
         const reply = await this.#ai.toolTurn(this.#chain, {
           purpose: "cuisinier",
           teamId,
@@ -378,6 +467,33 @@ export class Kitchen implements KitchenHooks {
               );
             }
             messages.push(toolMessage(call.id, name, "Paramètres invalides pour finish."));
+            continue;
+          }
+          if (name === "handoff") {
+            const parsed = handoffInput.safeParse(args);
+            if (!relay.requested || !branch) {
+              messages.push(toolMessage(call.id, name, "Aucun relais n'est demandé : continue la commande."));
+            } else if (!parsed.success) {
+              messages.push(toolMessage(call.id, name, "Paramètres invalides pour handoff."));
+            } else {
+              const failure = await this.#handOff(
+                machine,
+                order,
+                teamId,
+                branch,
+                handoffNote(parsed.data),
+                signal,
+              );
+              if (!failure) return;
+              relay.requested = false;
+              messages.push(
+                toolMessage(
+                  call.id,
+                  name,
+                  `Le relais n'a pas pu se faire (${failure}). Continue la commande.`,
+                ),
+              );
+            }
             continue;
           }
           if (!isCookTool(name)) {
@@ -432,7 +548,7 @@ export class Kitchen implements KitchenHooks {
           ...(order.sourceMessageId && { replyToId: order.sourceMessageId }),
         });
       } else if (error instanceof MachineGoneError) {
-        // La machine a disparu : la commande repart en attente, elle recommencera depuis le début.
+        // La machine a disparu : la commande repart en attente et reprendra depuis le dernier push.
         await this.#ctx.db
           .update(orders)
           .set({ status: "pending", updatedAt: new Date() })
@@ -505,16 +621,10 @@ export class Kitchen implements KitchenHooks {
     signal: AbortSignal,
   ): Promise<string> {
     const message = `${order.title}\n\nCommande n° ${order.number}.\n\n${summary}`.slice(0, 4000);
-    const result = await this.#callTool(machine, order, "git_save", { branch, message }, signal);
-    let saved: z.infer<typeof gitSaveResult> | null = null;
-    try {
-      saved = result.ok ? gitSaveResult.parse(JSON.parse(result.output)) : null;
-    } catch {
-      saved = null;
-    }
+    const { saved, failure } = await this.#gitSave(machine, order, { branch, message }, signal);
     if (!saved) {
-      await this.#step(order.id, "error", `Travail non enregistré dans Git : ${result.output}`);
-      return `\n\nLe travail n'a pas pu être enregistré dans Git : ${result.output}`;
+      await this.#step(order.id, "error", `Travail non enregistré dans Git : ${failure}`);
+      return `\n\nLe travail n'a pas pu être enregistré dans Git : ${failure}`;
     }
     await this.#ctx.db
       .update(orders)
@@ -522,6 +632,75 @@ export class Kitchen implements KitchenHooks {
       .where(eq(orders.id, order.id));
     await this.#step(order.id, "info", saved.note);
     return `\n\n${saved.note}`;
+  }
+
+  async #gitSave(
+    machine: LiveConnection,
+    order: OrderRow,
+    input: { branch: string; message: string; push?: boolean },
+    signal: AbortSignal,
+  ): Promise<{ saved: z.infer<typeof gitSaveResult> | null; failure: string }> {
+    const result = await this.#callTool(machine, order, "git_save", input, signal);
+    try {
+      return {
+        saved: result.ok ? gitSaveResult.parse(JSON.parse(result.output)) : null,
+        failure: result.output,
+      };
+    } catch {
+      return { saved: null, failure: result.output };
+    }
+  }
+
+  /**
+   * Pousse le travail en cours et remet la commande en attente d'une autre machine, avec la note
+   * de reprise. Si le push échoue, rien ne change et la raison revient : sinon le travail resterait
+   * enfermé sur la machine quittée.
+   */
+  async #handOff(
+    machine: LiveConnection,
+    order: OrderRow,
+    teamId: string,
+    branch: string,
+    note: string,
+    signal: AbortSignal,
+  ): Promise<string | null> {
+    const message = `${order.title} (travail en cours)\n\nCommande n° ${order.number}, passée à une autre machine.\n\n${note}`;
+    const { saved, failure } = await this.#gitSave(
+      machine,
+      order,
+      { branch, message: message.slice(0, 4000), push: true },
+      signal,
+    );
+    if (!saved || (saved.commit && !saved.pushed)) {
+      const why = saved?.note ?? failure;
+      await this.#step(order.id, "error", `Relais impossible : ${why}`);
+      await this.#publish(order.id, teamId);
+      return why;
+    }
+    await this.#ctx.db
+      .update(orders)
+      .set({
+        status: "pending",
+        handoffNote: note,
+        relayFromSessionId: machine.sessionId,
+        ...(saved.commit ? { commitSha: saved.commit, pushedAt: new Date() } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(orders.id, order.id));
+    await this.#step(
+      order.id,
+      "info",
+      "Travail poussé et note de reprise laissée : la commande attend une autre machine.",
+    );
+    await this.#publish(order.id, teamId);
+    await postAgentMessage(this.#ctx, {
+      projectId: order.projectId,
+      teamId,
+      kind: "cuisinier",
+      body: `La **commande n° ${order.number}** quitte cette machine : le travail est poussé sur la branche \`${branch}\`, elle reprendra sur la prochaine machine disponible.`,
+      ...(order.sourceMessageId && { replyToId: order.sourceMessageId }),
+    });
+    return null;
   }
 
   /** Envoie un outil à la machine et attend son résultat. */
@@ -642,6 +821,7 @@ export class Kitchen implements KitchenHooks {
         branch: row.branch,
         commit: row.commitSha,
         pushed: row.pushedAt !== null,
+        handoffNote: row.handoffNote,
         pullRequest:
           row.pullRequestNumber !== null && row.pullRequestUrl !== null
             ? { number: row.pullRequestNumber, url: row.pullRequestUrl }
@@ -653,6 +833,41 @@ export class Kitchen implements KitchenHooks {
       };
     });
   }
+}
+
+function handoffNote(input: z.infer<typeof handoffInput>): string {
+  return [
+    "**Fait**",
+    input.done,
+    "",
+    "**Reste à faire**",
+    input.remaining,
+    ...(input.commands.length > 0
+      ? ["", "**Commandes à relancer**", ...input.commands.map((command) => `- \`${command}\``)]
+      : []),
+  ].join("\n");
+}
+
+/** Ce que le cuisinier doit savoir quand il reprend une commande déjà commencée ailleurs. */
+function resumeLines(order: OrderRow): string[] {
+  if (order.handoffNote) {
+    return [
+      "",
+      "Reprise : cette commande a été commencée sur une autre machine, et la branche contient le travail poussé. Note de reprise laissée par le cuisinier :",
+      order.handoffNote,
+      "",
+      "Avant de continuer, sur cette nouvelle machine : vérifie l'environnement avec check_environment (système, versions de Node, Python…), installe les dépendances, écris le .env avec write_env si le projet en a besoin. Ne change rien hors du projet : signale dans ton bilan les ajustements à faire par le propriétaire de la machine.",
+    ];
+  }
+  if (!order.machineUserId) return [];
+  return [
+    "",
+    "Reprise : la machine précédente s'est déconnectée en pleine tâche, et ce qui n'était pas poussé peut être perdu. Regarde d'abord l'état réel du dossier, puis continue. Dernières étapes :",
+    ...order.steps
+      .filter((step) => step.text !== WAITING_TEXT)
+      .slice(-20)
+      .map((step) => `- ${step.text}`),
+  ];
 }
 
 function toolMessage(id: string, name: string, content: string): ChatMessage {

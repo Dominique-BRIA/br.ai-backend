@@ -120,6 +120,13 @@
       "when": 1793644343340,
       "tag": "0016_fusion_commande",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1793644899819,
+      "tag": "0017_relais_machines",
+      "breakpoints": true
     }
   ]
 }

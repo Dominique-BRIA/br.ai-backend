@@ -55,7 +55,11 @@ const history = async () =>
   ).json.messages;
 
 /** Une fausse machine : elle annonce le projet et répond aux outils avec `answer`. */
-async function machine(token: string, lending: boolean, answer: (tool: string) => string) {
+async function machine(
+  token: string,
+  lending: boolean,
+  answer: (tool: string, input: Record<string, unknown>) => string | Promise<string>,
+) {
   const live = await t.live(token);
   const { connectionId } = await live.next("welcome");
   const tools: string[] = [];
@@ -65,9 +69,8 @@ async function machine(token: string, lending: boolean, answer: (tool: string) =
       const call = await live.next("tool.call");
       if (!running) return;
       tools.push(call.tool);
-      live.socket.send(
-        JSON.stringify({ type: "tool.result", callId: call.callId, ok: true, output: answer(call.tool) }),
-      );
+      const output = await answer(call.tool, call.input as Record<string, unknown>);
+      live.socket.send(JSON.stringify({ type: "tool.result", callId: call.callId, ok: true, output }));
     }
   })();
   live.socket.send(JSON.stringify({ type: "machine.status", projects: [projectId], lending }));
@@ -227,6 +230,89 @@ describe("cuisinier", () => {
     expect(unlinked.json.project.repo).toBeNull();
   });
 
+  it("passe le relais à une autre machine avec le travail poussé et une note", async () => {
+    const repo = { fullName: "dominique/site", defaultBranch: "main" };
+    await t.call("PUT", `/projects/${projectId}/repo`, { token: chef.token, body: { repo } });
+
+    const order = await request(ali.token, "Page de tarifs");
+    ai.turns.push(
+      { calls: [{ name: "read_file", input: { path: "index.html" } }] },
+      {
+        calls: [
+          {
+            name: "handoff",
+            input: { done: "La page existe.", remaining: "Les prix.", commands: ["npm test"] },
+          },
+        ],
+      },
+    );
+    const relayRoute = `/orders/${order.id}/relay`;
+    let pushRequested: unknown;
+    let relayStatus = 0;
+    const aliMachine = await machine(ali.token, false, async (tool, input) => {
+      if (tool === "read_file") {
+        // Le membre demande le relais pendant que le cuisinier travaille.
+        relayStatus = (await t.call("POST", relayRoute, { token: ali.token })).status;
+        return "<html></html>";
+      }
+      if (tool === "git_save") {
+        pushRequested = input.push;
+        return JSON.stringify({ commit: "def5678", pushed: true, note: "Poussé." });
+      }
+      return "Branche prête.";
+    });
+    await waitFor(async () => (await orders())[0]?.handoffNote !== null);
+    expect(relayStatus).toBe(200);
+    expect(pushRequested).toBe(true);
+    expect(aliMachine.tools).toEqual(["git_prepare", "read_file", "git_save"]);
+    const waiting = (await orders())[0];
+    expect(waiting).toMatchObject({ status: "pending", commit: "def5678", pushed: true });
+    expect(waiting?.handoffNote).toContain("Les prix.");
+    expect(waiting?.handoffNote).toContain("`npm test`");
+    // La machine quittée, pourtant celle du demandeur, ne reprend pas la commande.
+    await t.kitchen?.schedule();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect((await orders())[0]?.status).toBe("pending");
+
+    // Une machine prêtée reprend, sur la même branche, avec la note.
+    ai.turns.push({ calls: [{ name: "finish", input: { success: true, summary: "Tarifs terminés." } }] });
+    const fatouMachine = await machine(fatou.token, true, (tool) =>
+      tool === "git_save"
+        ? JSON.stringify({ commit: "aaa1111", pushed: true, note: "Poussé." })
+        : "Branche reprise.",
+    );
+    await waitFor(async () => (await orders())[0]?.status === "done");
+    expect(fatouMachine.tools).toEqual(["git_prepare", "git_save"]);
+    const resumed = ai.toolRequests.at(-1)?.messages[1]?.content;
+    expect(resumed).toContain("Note de reprise");
+    expect(resumed).toContain("Les prix.");
+    expect(resumed).toContain("check_environment");
+    await aliMachine.close();
+    await fatouMachine.close();
+    await t.call("PUT", `/projects/${projectId}/repo`, { token: chef.token, body: { repo: null } });
+  });
+
+  it("refuse le relais d'une commande sans dépôt ou à quelqu'un d'autre", async () => {
+    const order = await request(ali.token, "Sans dépôt");
+    ai.turns.push({ calls: [{ name: "read_file", input: { path: "a.txt" } }] });
+    const statuses: number[] = [];
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const aliMachine = await machine(ali.token, false, async () => {
+      statuses.push((await t.call("POST", `/orders/${order.id}/relay`, { token: fatou.token })).status);
+      statuses.push((await t.call("POST", `/orders/${order.id}/relay`, { token: ali.token })).status);
+      release();
+      return "contenu";
+    });
+    ai.turns.push({ calls: [{ name: "finish", input: { success: true, summary: "Fini." } }] });
+    await held;
+    await waitFor(async () => (await orders())[0]?.status === "done");
+    await aliMachine.close();
+    expect(statuses).toEqual([403, 409]);
+  });
+
   it("remet la commande en attente si la machine se déconnecte en cours de route", async () => {
     await request(ali.token, "Plan du site");
     // L'IA demande un fichier ; la machine se ferme avant de répondre.
@@ -241,6 +327,15 @@ describe("cuisinier", () => {
     expect(steps.some((text) => text.includes("La machine s'est déconnectée"))).toBe(true);
     // Sans autre machine, la commande explique comment la débloquer.
     expect(steps.at(-1)).toContain("associez un dossier à ce projet");
+    // La machine suivante apprend qu'il s'agit d'une reprise et ce qui s'était passé.
+    ai.turns.push({ calls: [{ name: "finish", input: { success: true, summary: "Plan fait." } }] });
+    const next = await machine(ali.token, false, () => "ok");
+    await waitFor(async () => (await orders())[0]?.status === "done");
+    await next.close();
+    const resumed = ai.toolRequests.at(-1)?.messages[1]?.content;
+    expect(resumed).toContain("s'est déconnectée en pleine tâche");
+    expect(resumed).toContain("Le cuisinier commence sur la machine de Ali.");
+    expect(resumed).not.toContain("En attente d'une machine");
   });
 });
 

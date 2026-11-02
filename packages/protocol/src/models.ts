@@ -196,6 +196,8 @@ export const order = z.object({
   pullRequest: z.object({ number: z.number().int().positive(), url: z.url() }).nullable(),
   /** La pull request est fusionnée dans la branche principale. */
   merged: z.boolean(),
+  /** Note laissée par le cuisinier à la machine qui reprend la commande. */
+  handoffNote: z.string().nullable(),
   /** Dernières étapes, de la plus ancienne à la plus récente. */
   steps: z.array(orderStep),
   createdAt: z.iso.datetime(),

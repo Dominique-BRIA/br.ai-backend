@@ -39,6 +39,37 @@ export function orderRoutes(app: FastifyInstance, ctx: AppContext, kitchen: Kitc
     return { order };
   });
 
+  /** Passe une commande en cours à une autre machine : demandeur, chef ou propriétaire de la machine (F-REL-01). */
+  app.post("/orders/:orderId/relay", async (request): Promise<{ order: Order }> => {
+    const { orderId } = parse(orderParams, request.params);
+    if (!kitchen) throw new HttpError(404, "not_found", "Le cuisinier n'est pas activé sur ce serveur.");
+    const [row] = await ctx.db
+      .select({ order: orders, teamId: projects.teamId })
+      .from(orders)
+      .innerJoin(projects, eq(projects.id, orders.projectId))
+      .where(eq(orders.id, orderId));
+    const role = row ? await roleIn(ctx, request.userId, row.teamId) : null;
+    if (!row || !role) throw notFound("Commande introuvable.");
+    const allowed =
+      role === "chef" ||
+      row.order.requestedByUserId === request.userId ||
+      row.order.machineUserId === request.userId;
+    if (!allowed)
+      throw forbidden(
+        "Seuls le demandeur, le chef et le propriétaire de la machine peuvent passer le relais.",
+      );
+    if (!(await kitchen.relay(orderId, row.teamId))) {
+      throw new HttpError(
+        409,
+        "order_not_ready",
+        "Le relais demande une commande en cours sur un projet branché à un dépôt GitHub.",
+      );
+    }
+    const order = (await kitchen.list(row.order.projectId)).find((item) => item.id === orderId);
+    if (!order) throw notFound("Commande introuvable.");
+    return { order };
+  });
+
   /** La commande, son équipe et le rôle du membre, pour les étapes GitHub. */
   const loadForGit = async (orderId: string, userId: string) => {
     if (!kitchen) throw new HttpError(404, "not_found", "Le cuisinier n'est pas activé sur ce serveur.");
