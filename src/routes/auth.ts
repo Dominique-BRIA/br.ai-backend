@@ -78,7 +78,12 @@ export function authRoutes(app: FastifyInstance, ctx: AppContext): void {
     } catch (error) {
       // Code jamais reçu : on l'oublie, pour qu'un nouvel essai ne soit pas bloqué une minute.
       if (stored) await ctx.db.delete(loginCodes).where(eq(loginCodes.id, stored.id));
-      throw error;
+      request.log.error({ err: error }, "e-mail de connexion non envoyé");
+      throw new HttpError(
+        502,
+        "mail_failed",
+        "L'e-mail de connexion n'a pas pu partir. Réessayez dans un instant.",
+      );
     }
     return { newAccount: !existing };
   });

@@ -25,7 +25,9 @@ describe("connexion par e-mail", () => {
     const invite = await t.betaInvite(1);
     const body = { email: "envoi@exemple.org", invitationCode: invite };
     t.mailer.failNext = 1;
-    expect((await t.call("POST", "/auth/code", { body })).status).toBe(500);
+    const failed = await t.call("POST", "/auth/code", { body });
+    expect(failed.status).toBe(502);
+    expect(failed.json).toMatchObject({ error: { code: "mail_failed" } });
     const again = await t.call("POST", "/auth/code", { body });
     expect(again.status).toBe(200);
     expect(t.mailer.lastCodeFor("envoi@exemple.org")).toMatch(/^\d{6}$/);
