@@ -51,6 +51,8 @@ export interface AppOptions {
   helloTimeoutMs?: number;
   /** Codes de connexion par heure et par adresse pour de nouveaux comptes. */
   newAccountCodesPerHour?: number;
+  /** Clé du site, qui lui permet de transmettre l'adresse de ses visiteurs. */
+  siteRelayKey?: string;
 }
 
 export async function buildApp(options: AppOptions) {
@@ -103,7 +105,9 @@ export async function buildApp(options: AppOptions) {
     handleConnection(socket, { ctx, serverVersion: SERVER_VERSION, helloTimeoutMs: options.helloTimeoutMs });
   });
 
-  await app.register(async (scope) => authRoutes(scope, ctx, options.newAccountCodesPerHour));
+  await app.register(async (scope) =>
+    authRoutes(scope, ctx, options.newAccountCodesPerHour, options.siteRelayKey),
+  );
   await app.register(async (scope) => adminAuthRoutes(scope, ctx));
   await app.register(async (scope) => betaRequestRoutes(scope, ctx));
   await app.register(async (scope) => {

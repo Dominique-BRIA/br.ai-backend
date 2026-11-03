@@ -53,6 +53,7 @@ const { app } = await buildApp({
   adminToken: config.ADMIN_TOKEN,
   vault: config.SECRETS_KEY ? new Vault(config.SECRETS_KEY) : null,
   githubApp: githubAppFrom(config),
+  siteRelayKey: config.SITE_RELAY_KEY,
   mailer: config.RESEND_API_KEY ? new ResendMailer(config.RESEND_API_KEY, config.MAIL_FROM) : undefined,
   logger:
     config.NODE_ENV === "development"

@@ -38,7 +38,13 @@ export class MemoryMailer implements Mailer {
 export async function startApp(
   options: Pick<
     AppOptions,
-    "ai" | "serveurChain" | "cuisinierChain" | "vault" | "githubApp" | "newAccountCodesPerHour"
+    | "ai"
+    | "serveurChain"
+    | "cuisinierChain"
+    | "vault"
+    | "githubApp"
+    | "newAccountCodesPerHour"
+    | "siteRelayKey"
   > & {
     /** Crédits mensuels de la formule d'essai : les tests partent d'une équipe qui peut utiliser l'IA. */
     essaiCredits?: number;

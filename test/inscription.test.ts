@@ -186,4 +186,27 @@ describe("limite des nouveaux comptes", () => {
       await limited.stop();
     }
   });
+
+  it("compte chaque visiteur du site à part, mais seulement avec la clé du site", async () => {
+    const key = "cle-du-site-assez-longue-pour-le-test-0123456789";
+    const limited = await startApp({ newAccountCodesPerHour: 1, essaiCredits: 0, siteRelayKey: key });
+    try {
+      // Les demandes du site arrivent toutes de la même adresse : celle du serveur du site.
+      const fromSite = (email: string, visitor: string, siteKey = key) =>
+        limited.app.inject({
+          method: "POST",
+          url: "/auth/code",
+          headers: { "x-forwarded-for": "76.76.21.1", "x-bria-site-key": siteKey, "x-bria-visitor": visitor },
+          payload: { email },
+        });
+      expect((await fromSite("v1@exemple.org", "203.0.113.10")).statusCode).toBe(200);
+      expect((await fromSite("v2@exemple.org", "203.0.113.11")).statusCode).toBe(200);
+      expect((await fromSite("v3@exemple.org", "203.0.113.10")).statusCode).toBe(429);
+      // Sans la bonne clé, l'adresse transmise est ignorée : on retombe sur celle du site.
+      expect((await fromSite("v4@exemple.org", "203.0.113.12", "fausse-cle")).statusCode).toBe(200);
+      expect((await fromSite("v5@exemple.org", "203.0.113.13", "fausse-cle")).statusCode).toBe(429);
+    } finally {
+      await limited.stop();
+    }
+  });
 });

@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import {
   type RequestCodeResponse,
   requestCodeBody,
@@ -25,13 +26,14 @@ export function authRoutes(
   app: FastifyInstance,
   ctx: AppContext,
   newAccountCodesPerHour = NEW_ACCOUNT_CODES_PER_HOUR,
+  siteRelayKey?: string,
 ): void {
   const recentCodes = new Map<string, number[]>();
 
   const limitNewAccounts = (request: FastifyRequest) => {
     const now = Date.now();
     if (recentCodes.size > 10_000) recentCodes.clear();
-    const visitor = visitorAddress(request);
+    const visitor = visitorAddress(request, siteRelayKey);
     const times = (recentCodes.get(visitor) ?? []).filter((time) => now - time < NEW_ACCOUNT_WINDOW_MS);
     if (times.length >= newAccountCodesPerHour) {
       throw new HttpError(
@@ -147,10 +149,18 @@ export function authRoutes(
 /** Cherche une invitation valable : d'abord à la bêta, puis à une équipe. */
 
 /**
- * L'adresse du visiteur. Azure ajoute la vraie adresse à la fin de x-forwarded-for, parfois avec
- * son port : le début de l'en-tête vient du client et peut être inventé.
+ * L'adresse du visiteur. Le site br.garah.me, qui relaie ses inscriptions, la transmet avec sa clé.
+ * Sinon, Azure ajoute la vraie adresse à la fin de x-forwarded-for, parfois avec son port : le début
+ * de l'en-tête vient du client et peut être inventé.
  */
-function visitorAddress(request: FastifyRequest): string {
+function visitorAddress(request: FastifyRequest, siteRelayKey: string | undefined): string {
+  const key = request.headers["x-bria-site-key"];
+  const relayed = request.headers["x-bria-visitor"];
+  if (siteRelayKey && typeof key === "string" && typeof relayed === "string" && relayed) {
+    const given = Buffer.from(key);
+    const expected = Buffer.from(siteRelayKey);
+    if (given.length === expected.length && timingSafeEqual(given, expected)) return `site:${relayed}`;
+  }
   const forwarded = request.headers["x-forwarded-for"];
   const last = typeof forwarded === "string" ? forwarded.split(",").at(-1)?.trim() : undefined;
   return last ? last.replace(/^(\d+\.\d+\.\d+\.\d+):\d+$/, "$1") : request.ip;

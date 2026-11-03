@@ -51,6 +51,11 @@ const schema = z.object({
   GITHUB_APP_PRIVATE_KEY: z.string().optional(),
   GITHUB_APP_PRIVATE_KEY_PATH: z.string().optional(),
   GITHUB_WEBHOOK_SECRET: z.string().optional(),
+  /**
+   * Clé partagée avec le site br.garah.me : elle l'autorise à transmettre l'adresse de ses
+   * visiteurs. Sans elle, les inscriptions faites sur le site comptent comme une seule adresse.
+   */
+  SITE_RELAY_KEY: z.string().min(32).optional(),
   /** Clé maîtresse du coffre de secrets : 32 octets en base64. Sans elle, le coffre est fermé. */
   SECRETS_KEY: z.string().optional(),
   /** Dossier des pièces jointes quand Backblaze B2 n'est pas configuré. */
