@@ -40,8 +40,10 @@ export type MachineInfo = z.infer<typeof machineInfo>;
 const hello = z.object({
   type: z.literal("hello"),
   protocolVersion: z.number().int().positive(),
-  /** Jeton de session obtenu à la connexion du compte. */
-  token: z.string().min(1),
+  /** Jeton de session obtenu à la connexion du compte (extension). */
+  token: z.string().min(1).optional(),
+  /** Ticket à usage unique demandé par le site pour la plateforme web, à la place du jeton. */
+  ticket: z.string().min(1).max(200).optional(),
   machine: machineInfo,
 });
 

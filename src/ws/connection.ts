@@ -8,10 +8,11 @@ import {
 } from "@br-ia/protocol";
 import { eq } from "drizzle-orm";
 import type { WebSocket } from "ws";
-import { findSession } from "../auth/sessions.ts";
+import { findSession, findSessionById } from "../auth/sessions.ts";
 import type { AppContext } from "../context.ts";
 import { sessions } from "../db/schema.ts";
 import type { LiveConnection } from "../realtime/hub.ts";
+import type { RealtimeTickets } from "../realtime/tickets.ts";
 import { teammateIds } from "../services/access.ts";
 
 /** Codes de fermeture WebSocket propres à <br/> (plage 4000-4999 réservée aux applications). */
@@ -29,7 +30,7 @@ export const CLOSE_CODES = {
  */
 export function handleConnection(
   socket: WebSocket,
-  options: { ctx: AppContext; serverVersion: string; helloTimeoutMs?: number },
+  options: { ctx: AppContext; serverVersion: string; helloTimeoutMs?: number; tickets?: RealtimeTickets },
 ): void {
   const { ctx, serverVersion } = options;
   const connectionId = randomUUID();
@@ -87,7 +88,13 @@ export function handleConnection(
         );
         return;
       }
-      const session = await findSession(ctx, message.token);
+      // L'extension présente son jeton ; la plateforme web, un ticket à usage unique.
+      const ticketSession = message.ticket ? (options.tickets?.take(message.ticket) ?? null) : null;
+      const session = message.token
+        ? await findSession(ctx, message.token)
+        : ticketSession
+          ? await findSessionById(ctx, ticketSession)
+          : null;
       if (!session) {
         fail(
           "unauthenticated",

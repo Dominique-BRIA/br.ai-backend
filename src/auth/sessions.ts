@@ -33,6 +33,18 @@ export async function findSession(ctx: AppContext, token: string) {
   return session;
 }
 
+/** La session d'un ticket temps réel, si elle est toujours ouverte et le compte actif. */
+export async function findSessionById(ctx: AppContext, sessionId: string) {
+  const [session] = await ctx.db
+    .select({ id: sessions.id, userId: sessions.userId, email: users.email })
+    .from(sessions)
+    .innerJoin(users, eq(users.id, sessions.userId))
+    .where(and(eq(sessions.id, sessionId), isNull(sessions.revokedAt), isNull(users.suspendedAt)));
+  if (!session) return null;
+  await ctx.db.update(sessions).set({ lastSeenAt: new Date() }).where(eq(sessions.id, session.id));
+  return session;
+}
+
 export async function revokeSession(ctx: AppContext, token: string): Promise<void> {
   await ctx.db
     .update(sessions)

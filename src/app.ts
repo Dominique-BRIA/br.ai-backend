@@ -10,6 +10,7 @@ import type { Database } from "./db/client.ts";
 import { registerErrorHandler } from "./http/errors.ts";
 import { LogMailer, type Mailer } from "./mail/mailer.ts";
 import { RealtimeHub } from "./realtime/hub.ts";
+import { RealtimeTickets } from "./realtime/tickets.ts";
 import { adminRoutes } from "./routes/admin.ts";
 import { adminAuthRoutes } from "./routes/adminAuth.ts";
 import { attachmentRoutes } from "./routes/attachments.ts";
@@ -80,6 +81,7 @@ export async function buildApp(options: AppOptions) {
     ctx.summarize = (request) => serveur.summarize(request);
   } else app.log.warn("Agent serveur désactivé : aucune clé d'IA configurée.");
 
+  const tickets = new RealtimeTickets();
   await resumeMaintenance(ctx);
   registerErrorHandler(app);
   await app.register(websocket);
@@ -102,7 +104,12 @@ export async function buildApp(options: AppOptions) {
   });
 
   app.get(WS_PATH, { websocket: true }, (socket) => {
-    handleConnection(socket, { ctx, serverVersion: SERVER_VERSION, helloTimeoutMs: options.helloTimeoutMs });
+    handleConnection(socket, {
+      ctx,
+      serverVersion: SERVER_VERSION,
+      helloTimeoutMs: options.helloTimeoutMs,
+      tickets,
+    });
   });
 
   await app.register(async (scope) =>
@@ -119,6 +126,8 @@ export async function buildApp(options: AppOptions) {
     secretRoutes(scope, ctx);
     memoryRoutes(scope, ctx);
     orderRoutes(scope, ctx, kitchen, options.githubApp ?? null);
+    /** Ticket de connexion temps réel pour la plateforme web. */
+    scope.post("/realtime/ticket", async (request) => tickets.issue(request.sessionId));
     githubAppRoutes(scope, ctx, options.githubApp ?? null);
   });
   const { githubApp } = options;
