@@ -1,14 +1,16 @@
 import { timingSafeEqual } from "node:crypto";
 import { createPromoBody, type PromoCode } from "@br-ia/protocol";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { ModelChoice } from "../ai/client.ts";
 import { allowed, requiredPermission } from "../auth/adminPermissions.ts";
+import { openSession } from "../auth/sessions.ts";
 import type { AppContext } from "../context.ts";
-import { promoCodes } from "../db/schema.ts";
+import { promoCodes, sessions } from "../db/schema.ts";
 import { HttpError, parse } from "../http/errors.ts";
 import { auditDetail, describeAction, recordAudit } from "../services/audit.ts";
+import { CLOUD_USER_ID } from "../services/cloud.ts";
 import { createPromoCodes, toPromoCode } from "../services/promo.ts";
 import { adminAccountRoutes, findAdminSession } from "./adminAuth.ts";
 import { betaRequestAdminRoutes } from "./beta.ts";
@@ -71,6 +73,7 @@ export function adminRoutes(
 
   adminAccountRoutes(app, ctx);
   betaRequestAdminRoutes(app, ctx);
+  cloudMachineRoutes(app, ctx);
 
   dashboardRoutes(app, ctx, chains);
   insightRoutes(app, ctx);
@@ -95,6 +98,43 @@ export function adminRoutes(
       .returning();
     if (!row) throw new HttpError(404, "not_found", "Code introuvable.");
     return { code: toPromoCode(row) };
+  });
+}
+
+/** Machines cloud du cuisinier : chacune a sa session, sur le compte de service. */
+export function cloudMachineRoutes(app: FastifyInstance, ctx: AppContext): void {
+  app.get("/admin/cloud-machines", async () => {
+    const rows = await ctx.db
+      .select()
+      .from(sessions)
+      .where(and(eq(sessions.userId, CLOUD_USER_ID), isNull(sessions.revokedAt)));
+    const online = ctx.hub.onlineSessions(CLOUD_USER_ID);
+    return {
+      machines: rows.map((row) => ({
+        id: row.id,
+        label: row.machineId,
+        createdAt: row.createdAt.toISOString(),
+        lastSeenAt: row.lastSeenAt.toISOString(),
+        online: online.has(row.id),
+      })),
+    };
+  });
+
+  /** Le jeton n'est rendu qu'ici, une seule fois : il se colle dans la configuration de la machine. */
+  app.post("/admin/cloud-machines", async (request) => {
+    const { label } = parse(z.object({ label: z.string().trim().min(1).max(60) }), request.body);
+    const token = await openSession(ctx, CLOUD_USER_ID, label);
+    return { token };
+  });
+
+  app.delete("/admin/cloud-machines/:id", async (request, reply) => {
+    const { id } = parse(z.object({ id: z.uuid() }), request.params);
+    await ctx.db
+      .update(sessions)
+      .set({ revokedAt: new Date() })
+      .where(and(eq(sessions.id, id), eq(sessions.userId, CLOUD_USER_ID)));
+    ctx.hub.closeSession(CLOUD_USER_ID, id);
+    return reply.code(204).send();
   });
 }
 

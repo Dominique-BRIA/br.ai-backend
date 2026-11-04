@@ -5,6 +5,7 @@ import {
   type OrderValidateResponse,
   orderPullRequestBody,
 } from "@br-ia/protocol";
+
 import { and, eq, isNull } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -13,6 +14,7 @@ import type { AppContext } from "../context.ts";
 import { orders, projects, users } from "../db/schema.ts";
 import { forbidden, HttpError, notFound, parse } from "../http/errors.ts";
 import { memberIds, requireProject, roleIn } from "../services/access.ts";
+import { cloudConfigured } from "../services/cloud.ts";
 import { quotaReached } from "../services/credits.ts";
 import type { GitHubApp, ServerMerge } from "../services/githubApp.ts";
 import { postAgentMessage } from "../services/messages.ts";
@@ -38,7 +40,7 @@ export function orderRoutes(
    */
   app.post("/projects/:projectId/orders", async (request): Promise<{ order: Order }> => {
     const { projectId } = parse(projectParams, request.params);
-    const { title, brief } = parse(createOrderBody, request.body);
+    const { title, brief, runOn } = parse(createOrderBody, request.body);
     const { project } = await requireProject(ctx, request.userId, projectId);
     if (!kitchen) throw new HttpError(404, "not_found", "Le cuisinier n'est pas activé sur ce serveur.");
     if (await quotaReached(ctx, project.teamId)) {
@@ -47,6 +49,22 @@ export function orderRoutes(
         "credits_insufficient",
         "Crédit insuffisant : le chef peut saisir un code d'invitation dans la page de l'équipe.",
       );
+    }
+    if (runOn === "cloud") {
+      if (!(await cloudConfigured(ctx))) {
+        throw new HttpError(
+          409,
+          "cloud_unavailable",
+          "Aucune machine cloud n'est en service pour l'instant.",
+        );
+      }
+      if (project.repoFullName && !project.repoInstallationId) {
+        throw new HttpError(
+          409,
+          "cloud_unavailable",
+          "Ce projet a un dépôt GitHub : la machine cloud a besoin de l'application GitHub de <br/> sur ce dépôt.",
+        );
+      }
     }
     const [author] = await ctx.db
       .select({ displayName: users.displayName })
@@ -58,7 +76,7 @@ export function orderRoutes(
       projectId,
       teamId: project.teamId,
       kind: "serveur",
-      body: `${author?.displayName ?? "Un membre"} a passé une commande au cuisinier : **${plainTitle}**.`,
+      body: `${author?.displayName ?? "Un membre"} a passé une commande au cuisinier${runOn === "cloud" ? ", sur la machine cloud" : ""} : **${plainTitle}**.`,
     });
     const order = await kitchen.createOrder({
       projectId,
@@ -68,9 +86,13 @@ export function orderRoutes(
       requestedByUserId: request.userId,
       sourceMessageId: announcement.id,
       memoryItemId: null,
+      runOn,
     });
     return { order };
   });
+
+  /** Une machine cloud est-elle en service ? Les formulaires de commande proposent alors le choix. */
+  app.get("/cloud", async (): Promise<{ available: boolean }> => ({ available: await cloudConfigured(ctx) }));
 
   /** Arrête une commande : réservé au demandeur et au chef (F-CMD-04). */
   app.post("/orders/:orderId/stop", async (request): Promise<{ order: Order }> => {

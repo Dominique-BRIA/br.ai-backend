@@ -15,6 +15,8 @@ const ACTIONS: Record<string, string> = {
   "DELETE /admin/maintenance": "Plateforme rouverte",
   "POST /admin/promo-codes": "Codes promo créés",
   "PATCH /admin/promo-codes/:id": "Code promo modifié",
+  "POST /admin/cloud-machines": "Machine cloud enregistrée",
+  "DELETE /admin/cloud-machines/:id": "Machine cloud retirée",
   "POST /admin/beta-requests/:id/invite": "Invitation bêta envoyée",
   "POST /admin/beta-requests/:id/resend": "Invitation bêta renvoyée",
 };

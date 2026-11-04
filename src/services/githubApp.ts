@@ -96,6 +96,26 @@ export class GitHubApp {
     return ok ? (json as { id: number }).id : null;
   }
 
+  /**
+   * Jeton d'installation limité à un dépôt, en écriture sur son contenu, valable une heure : la
+   * machine cloud s'en sert pour cloner et pousser la branche d'une commande.
+   */
+  async installationToken(installationId: number, fullName: string): Promise<string> {
+    const name = fullName.split("/")[1];
+    const access = await this.#api(
+      "POST",
+      `/app/installations/${installationId}/access_tokens`,
+      this.#appToken(),
+      {
+        repositories: [name],
+        permissions: { contents: "write", metadata: "read" },
+      },
+    );
+    const token = (access.json as { token?: string }).token;
+    if (!access.ok || !token) throw new Error(`Accès GitHub refusé (${access.status}).`);
+    return token;
+  }
+
   /** Ouvre la pull request (ou reprend celle qui existe) et la fusionne au nom de l'application. */
   async mergeBranch(
     installationId: number,

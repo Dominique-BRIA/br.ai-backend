@@ -141,6 +141,20 @@
       "when": 1793649265760,
       "tag": "0019_essai_sans_credits",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793784473427,
+      "tag": "0020_commandes_cloud",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793784476961,
+      "tag": "0021_compte_machine_cloud",
+      "breakpoints": true
     }
   ]
 }

@@ -94,6 +94,8 @@ export async function postAgentMessage(
     replyToId?: string;
     /** Membres à prévenir : le message apparaît dans leurs notifications. */
     mentions?: string[];
+    /** Pièces jointes déjà enregistrées, rattachées au message. */
+    attachmentIds?: string[];
   },
 ): Promise<Message> {
   const [row] = await ctx.db
@@ -106,6 +108,12 @@ export async function postAgentMessage(
       mentions: options.mentions ?? [],
     })
     .returning({ id: messages.id });
+  if (row && options.attachmentIds?.length) {
+    await ctx.db
+      .update(attachments)
+      .set({ messageId: row.id })
+      .where(inArray(attachments.id, options.attachmentIds));
+  }
   const message = row && (await loadMessage(ctx, row.id));
   if (!message) throw new Error("Message de l'agent non enregistré.");
   ctx.hub.sendTo(await memberIds(ctx, options.teamId), { type: "message.created", message });

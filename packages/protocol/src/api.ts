@@ -53,6 +53,7 @@ export const apiErrorCode = z.enum([
   "github_failed",
   "signup_limited",
   "credits_insufficient",
+  "cloud_unavailable",
 ]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 
@@ -274,6 +275,8 @@ export type OrdersResponse = z.infer<typeof ordersResponse>;
 export const createOrderBody = z.object({
   title: z.string().trim().min(1).max(120),
   brief: z.string().trim().min(1).max(6000),
+  /** « cloud » : la commande, jugée non sensible par le demandeur, tourne sur la machine cloud. */
+  runOn: z.enum(["member", "cloud"]).default("member"),
 });
 export type CreateOrderBody = z.input<typeof createOrderBody>;
 

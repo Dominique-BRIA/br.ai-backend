@@ -107,3 +107,40 @@ export function isCookTool(name: string): name is CookToolName {
 /** Outils qui modifient la machine : ils demandent une validation selon le mode choisi. */
 export const WRITE_TOOLS: CookToolName[] = ["write_file", "edit_file"];
 export const COMMAND_TOOLS: CookToolName[] = ["run_command"];
+
+/**
+ * Outils internes de la machine cloud, demandés par le serveur autour du travail de l'IA (l'IA ne
+ * les voit pas) : préparer le dossier de travail, rendre les fichiers créés, faire le ménage.
+ */
+export const cloudTools = {
+  cloud_prepare: {
+    input: z.object({
+      /** Projet avec dépôt : de quoi le cloner et commiter au nom du demandeur ; sinon dossier vide. */
+      repo: z
+        .object({
+          fullName: z.string().regex(/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/),
+          /** Jeton d'installation de l'application GitHub, limité au dépôt et valable une heure. */
+          token: z.string().min(1).max(500),
+          author: z.object({ name: z.string().min(1).max(100), email: z.string().min(3).max(200) }),
+        })
+        .nullable(),
+    }),
+  },
+  cloud_collect: { input: z.object({}) },
+  cloud_cleanup: { input: z.object({}) },
+} as const;
+export type CloudToolName = keyof typeof cloudTools;
+
+export function isCloudTool(name: string): name is CloudToolName {
+  return Object.hasOwn(cloudTools, name);
+}
+
+/** Fichiers rendus par la machine cloud pour un projet sans dépôt (contenu en base64). */
+export const cloudCollectResult = z.object({
+  files: z
+    .array(z.object({ path: z.string().max(300), contentType: z.string().max(100), base64: z.string() }))
+    .max(20),
+  /** Fichiers laissés de côté : trop gros, ou trop nombreux. */
+  skipped: z.number().int().nonnegative(),
+});
+export type CloudCollectResult = z.infer<typeof cloudCollectResult>;

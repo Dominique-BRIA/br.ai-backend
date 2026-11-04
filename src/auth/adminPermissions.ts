@@ -39,6 +39,7 @@ const BY_PREFIX: [string, AdminPermission][] = [
   ["/admin/beta-requests", "demandes"],
   ["/admin/feedback", "retours"],
   ["/admin/maintenance", "maintenance"],
+  ["/admin/cloud-machines", "reglages"],
   ["/admin/pending-orders", "maintenance"],
   ["/admin/admins", "comptes"],
   ["/admin/plans", "reglages"],

@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "run_on" text DEFAULT 'member' NOT NULL;

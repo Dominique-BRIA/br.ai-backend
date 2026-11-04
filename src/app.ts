@@ -71,7 +71,8 @@ export async function buildApp(options: AppOptions) {
   };
   const ai = options.ai ?? new AiClient(ctx);
   const cuisinierChain = options.cuisinierChain ?? [];
-  const kitchen = cuisinierChain.length > 0 ? new Kitchen(ctx, ai, cuisinierChain) : null;
+  const kitchen =
+    cuisinierChain.length > 0 ? new Kitchen(ctx, ai, cuisinierChain, options.githubApp ?? null) : null;
   if (kitchen) ctx.kitchen = kitchen;
   else app.log.warn("Cuisinier désactivé : aucune clé d'IA configurée pour lui.");
   const serveurChain = options.serveurChain ?? [];

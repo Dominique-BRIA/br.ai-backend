@@ -13,6 +13,7 @@ import type { AppContext } from "../context.ts";
 import { loginCodes, users } from "../db/schema.ts";
 import { HttpError, parse } from "../http/errors.ts";
 import { loginCodeMail } from "../mail/templates.ts";
+import { CLOUD_EMAIL } from "../services/cloud.ts";
 
 export const CODE_TTL_MS = 10 * 60_000;
 export const MAX_ATTEMPTS = 5;
@@ -47,6 +48,9 @@ export function authRoutes(
 
   app.post("/auth/code", async (request): Promise<RequestCodeResponse> => {
     const { email } = parse(requestCodeBody, request.body);
+    if (email === CLOUD_EMAIL) {
+      throw new HttpError(403, "account_suspended", "Ce compte ne permet pas de se connecter.");
+    }
     const [existing] = await ctx.db
       .select({ id: users.id, locale: users.locale, suspendedAt: users.suspendedAt })
       .from(users)

@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import { cookTools, gitSaveResult, isCookTool, type Order, type OrderStatus } from "@br-ia/protocol";
+import {
+  cloudCollectResult,
+  cookTools,
+  gitSaveResult,
+  isCookTool,
+  type Order,
+  type OrderStatus,
+} from "@br-ia/protocol";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import {
@@ -10,9 +17,11 @@ import {
   type ToolDefinition,
 } from "../ai/client.ts";
 import type { AppContext } from "../context.ts";
-import { localMemories, type OrderStepRow, orders, projects, users } from "../db/schema.ts";
+import { attachments, localMemories, type OrderStepRow, orders, projects, users } from "../db/schema.ts";
 import type { LiveConnection } from "../realtime/hub.ts";
 import { memberIds } from "../services/access.ts";
+import { CLOUD_MAX_MS, CLOUD_USER_ID, noreplyEmail } from "../services/cloud.ts";
+import type { GitHubApp } from "../services/githubApp.ts";
 import { announceMemoryChange, setMemoryStatus } from "../services/memory.ts";
 import { postAgentMessage } from "../services/messages.ts";
 import { orderBranch } from "../services/projects.ts";
@@ -26,6 +35,14 @@ const TOOL_TIMEOUT_MS = 15 * 60_000;
 const MAX_TOOL_OUTPUT = 15_000;
 const WAITING_TEXT =
   "En attente d'une machine : associez un dossier à ce projet sur votre machine (clic droit sur le projet dans la vue Équipes), ou demandez à un coéquipier de prêter la sienne.";
+const CLOUD_WAITING_TEXT =
+  "En attente de la machine cloud de <br/> : elle termine une autre commande, ou elle est hors ligne pour l'instant.";
+/** Ce que la machine cloud dit d'elle-même au cuisinier, à la place du propriétaire et de ses dossiers. */
+const CLOUD_MACHINE_LINES = [
+  "Machine : la machine cloud de <br/>, sous Linux (1 Go de mémoire), commandes exécutées par sh.",
+  "Le dossier du projet est un clone du dépôt, ou un dossier vide pour un projet sans dépôt : les fichiers que tu y crées sont rendus à l'équipe. Il n'y a ni secrets ni fichier .env, et rien n'est accessible hors de ce dossier.",
+];
+
 /** Nombre d'étapes gardées dans la commande. */
 const MAX_STEPS = 60;
 
@@ -70,6 +87,9 @@ const TOOLS: ToolDefinition[] = [
     },
   },
 ];
+
+/** Sur la machine cloud, pas de coffre de secrets : write_env n'est pas proposé. */
+const CLOUD_TOOLS = TOOLS.filter((tool) => tool.function.name !== "write_env");
 
 const SYSTEM_PROMPT = `Tu es le cuisinier de <br/> : tu réalises une commande (code ou document) dans le dossier d'un projet, sur la machine d'un membre de l'équipe, avec les outils fournis. Les chemins sont relatifs au dossier du projet.
 
@@ -123,14 +143,24 @@ export class Kitchen implements KitchenHooks {
   readonly #chain: ModelChoice[];
   readonly #active = new Map<
     string,
-    { orderId: string; controller: AbortController; done: Promise<void>; relay: RelayRequest }
+    {
+      orderId: string;
+      controller: AbortController;
+      done: Promise<void>;
+      relay: RelayRequest;
+      /** Connexion de la machine qui travaille : une machine cloud ne prend qu'une commande à la fois. */
+      connectionId: string;
+    }
   >();
   readonly #calls = new Map<string, PendingCall>();
 
-  constructor(ctx: AppContext, ai: Ai, chain: ModelChoice[]) {
+  readonly #github: GitHubApp | null;
+
+  constructor(ctx: AppContext, ai: Ai, chain: ModelChoice[], github: GitHubApp | null = null) {
     this.#ctx = ctx;
     this.#ai = ai;
     this.#chain = chain;
+    this.#github = github;
   }
 
   /** Enregistre une commande et tente de la démarrer. */
@@ -142,6 +172,8 @@ export class Kitchen implements KitchenHooks {
     requestedByUserId: string;
     sourceMessageId: string | null;
     memoryItemId: string | null;
+    /** « cloud » : sur la machine cloud de <br/>, pour une commande jugée non sensible. */
+    runOn?: "member" | "cloud";
   }): Promise<Order> {
     const row = await this.#ctx.db.transaction(async (tx) => {
       const [last] = await tx
@@ -160,6 +192,7 @@ export class Kitchen implements KitchenHooks {
           requestedByUserId: input.requestedByUserId,
           sourceMessageId: input.sourceMessageId,
           memoryItemId: input.memoryItemId,
+          runOn: input.runOn ?? "member",
           steps: [{ at: new Date().toISOString(), kind: "info", text: "Commande reçue." }],
         })
         .returning();
@@ -284,13 +317,21 @@ export class Kitchen implements KitchenHooks {
 
   /** Dit une fois pourquoi la commande attend, et comment la débloquer. */
   async #explainWaiting(order: OrderRow, teamId: string): Promise<void> {
-    if (order.steps.at(-1)?.text === WAITING_TEXT) return;
-    await this.#step(order.id, "info", WAITING_TEXT);
+    const text = order.runOn === "cloud" ? CLOUD_WAITING_TEXT : WAITING_TEXT;
+    if (order.steps.at(-1)?.text === text) return;
+    await this.#step(order.id, "info", text);
     await this.#publish(order.id, teamId);
   }
 
   /** La machine du demandeur d'abord ; sinon celle d'un membre qui prête la sienne. */
   async #pickMachine(order: OrderRow, teamId: string): Promise<LiveConnection | undefined> {
+    // Commande « cloud » : la machine cloud libre, quel que soit le projet.
+    if (order.runOn === "cloud") {
+      const busy = new Set([...this.#active.values()].map((entry) => entry.connectionId));
+      return this.#ctx.hub
+        .all()
+        .find((connection) => connection.userId === CLOUD_USER_ID && !busy.has(connection.connectionId));
+    }
     const candidates = this.#ctx.hub
       .all()
       .filter(
@@ -312,9 +353,26 @@ export class Kitchen implements KitchenHooks {
       )
       .finally(() => {
         this.#active.delete(order.projectId);
+        // La machine cloud efface le dossier de la commande ; la réponse n'est pas attendue.
+        if (machine.userId === CLOUD_USER_ID) {
+          machine.send({
+            type: "tool.call",
+            callId: randomUUID(),
+            orderId: order.id,
+            projectId: order.projectId,
+            tool: "cloud_cleanup",
+            input: {},
+          });
+        }
         void this.schedule();
       });
-    this.#active.set(order.projectId, { orderId: order.id, controller, done, relay });
+    this.#active.set(order.projectId, {
+      orderId: order.id,
+      controller,
+      done,
+      relay,
+      connectionId: machine.connectionId,
+    });
   }
 
   async #run(
@@ -329,6 +387,9 @@ export class Kitchen implements KitchenHooks {
       .from(users)
       .where(eq(users.id, machine.userId));
     const ownerName = owner?.displayName ?? "un membre";
+    const cloud = machine.userId === CLOUD_USER_ID;
+    const where = cloud ? "la machine cloud de <br/>" : `la machine de ${ownerName}`;
+    const startedAt = Date.now();
     await this.#ctx.db
       .update(orders)
       .set({
@@ -339,13 +400,13 @@ export class Kitchen implements KitchenHooks {
         updatedAt: new Date(),
       })
       .where(eq(orders.id, order.id));
-    await this.#step(order.id, "info", `Le cuisinier commence sur la machine de ${ownerName}.`);
+    await this.#step(order.id, "info", `Le cuisinier commence sur ${where}.`);
     await this.#publish(order.id, teamId);
     await postAgentMessage(this.#ctx, {
       projectId: order.projectId,
       teamId,
       kind: "cuisinier",
-      body: `Je commence la **commande n° ${order.number}** (${order.title}) sur la machine de ${ownerName}.`,
+      body: `Je commence la **commande n° ${order.number}** (${order.title}) sur ${where}.`,
       ...(order.sourceMessageId && { replyToId: order.sourceMessageId }),
     });
 
@@ -365,20 +426,24 @@ export class Kitchen implements KitchenHooks {
           "",
           order.brief,
           "",
-          `Machine : ${machine.machine.os}, commandes exécutées par ${shell}, éditeur ${machine.machine.editor}.`,
-          ...(machine.machine.folders
+          ...(cloud
+            ? CLOUD_MACHINE_LINES
+            : [
+                `Machine : ${machine.machine.os}, commandes exécutées par ${shell}, éditeur ${machine.machine.editor}.`,
+              ]),
+          ...(!cloud && machine.machine.folders
             ? [
                 `Dossiers de ${ownerName} sur cette machine : personnel ${machine.machine.folders.home}, Bureau ${machine.machine.folders.desktop}, Documents ${machine.machine.folders.documents}.`,
               ]
             : []),
-          ...(preferences?.content.trim()
+          ...(!cloud && preferences?.content.trim()
             ? [
                 "",
                 `Préférences de travail de ${ownerName} (sa mémoire locale), à respecter :`,
                 preferences.content.trim(),
               ]
             : []),
-          ...(secrets.length > 0
+          ...(!cloud && secrets.length > 0
             ? [
                 "",
                 `Secrets du coffre du projet (noms seulement) : ${secrets.join(", ")}. Pour un .env, utilise write_env ; ne demande jamais une valeur.`,
@@ -392,10 +457,20 @@ export class Kitchen implements KitchenHooks {
     const changed = new Set<string>();
     let nudges = 0;
     try {
+      if (cloud && !(await this.#prepareCloud(machine, order, teamId, signal))) return;
       const branch = await this.#prepareBranch(machine, order, teamId, signal);
       if (branch === false) return;
       for (let turn = 1; turn <= MAX_TURNS; turn++) {
         if (signal.aborted) throw new StoppedError();
+        if (cloud && Date.now() - startedAt > CLOUD_MAX_MS) {
+          return await this.#finish(
+            order,
+            teamId,
+            false,
+            "La commande a dépassé 20 minutes sur la machine cloud, partagée par toutes les équipes. Découpez-la en commandes plus petites, ou faites-la sur la machine d'un membre.",
+            changed,
+          );
+        }
         if (relay.requested && branch) {
           if (relay.nudges >= MAX_RELAY_NUDGES) {
             const failure = await this.#handOff(
@@ -427,7 +502,7 @@ export class Kitchen implements KitchenHooks {
           userId: order.requestedByUserId ?? undefined,
           projectId: order.projectId,
           messages,
-          tools: TOOLS,
+          tools: cloud ? CLOUD_TOOLS : TOOLS,
         });
         messages.push({ role: "assistant", content: reply.content, tool_calls: reply.toolCalls });
 
@@ -458,12 +533,17 @@ export class Kitchen implements KitchenHooks {
                 parsed.data.success && branch
                   ? await this.#saveBranch(machine, order, branch, parsed.data.summary, signal)
                   : "";
+              const files =
+                parsed.data.success && cloud && !branch
+                  ? await this.#collectCloud(machine, order, signal)
+                  : [];
               return await this.#finish(
                 order,
                 teamId,
                 parsed.data.success,
                 `${parsed.data.summary}${saved}`,
                 changed,
+                files,
               );
             }
             messages.push(toolMessage(call.id, name, "Paramètres invalides pour finish."));
@@ -494,6 +574,10 @@ export class Kitchen implements KitchenHooks {
                 ),
               );
             }
+            continue;
+          }
+          if (cloud && name === "write_env") {
+            messages.push(toolMessage(call.id, name, "Pas de secrets sur la machine cloud."));
             continue;
           }
           if (!isCookTool(name)) {
@@ -703,6 +787,98 @@ export class Kitchen implements KitchenHooks {
     return null;
   }
 
+  /**
+   * Prépare le dossier de la commande sur la machine cloud : un clone du dépôt, avec un jeton
+   * d'installation limité à ce dépôt et des commits au nom du demandeur, ou un dossier vide.
+   */
+  async #prepareCloud(
+    machine: LiveConnection,
+    order: OrderRow,
+    teamId: string,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    const fail = async (why: string) => {
+      await this.#finish(order, teamId, false, why, new Set());
+      return false;
+    };
+    const [project] = await this.#ctx.db
+      .select({ repoFullName: projects.repoFullName, repoInstallationId: projects.repoInstallationId })
+      .from(projects)
+      .where(eq(projects.id, order.projectId));
+    let repo: { fullName: string; token: string; author: { name: string; email: string } } | null = null;
+    if (project?.repoFullName) {
+      if (!project.repoInstallationId || !this.#github) {
+        return fail(
+          "Ce projet a un dépôt GitHub, mais l'application GitHub de <br/> n'y est pas installée : la machine cloud ne peut pas le cloner. Le chef peut l'installer en rebranchant le dépôt.",
+        );
+      }
+      const [requester] = order.requestedByUserId
+        ? await this.#ctx.db
+            .select({ displayName: users.displayName })
+            .from(users)
+            .where(eq(users.id, order.requestedByUserId))
+        : [];
+      try {
+        repo = {
+          fullName: project.repoFullName,
+          token: await this.#github.installationToken(project.repoInstallationId, project.repoFullName),
+          author: {
+            name: requester?.displayName ?? "Membre",
+            email: noreplyEmail(order.requestedByUserId ?? "ancien-membre"),
+          },
+        };
+      } catch (error) {
+        return fail(`GitHub refuse l'accès au dépôt pour la machine cloud : ${(error as Error).message}`);
+      }
+    }
+    const prepared = await this.#callTool(machine, order, "cloud_prepare", { repo }, signal);
+    if (!prepared.ok) return fail(`La machine cloud n'a pas pu préparer le dossier : ${prepared.output}`);
+    await this.#step(order.id, "info", prepared.output);
+    await this.#publish(order.id, teamId);
+    return true;
+  }
+
+  /** Projet sans dépôt : les fichiers créés sur la machine cloud deviennent des pièces jointes. */
+  async #collectCloud(machine: LiveConnection, order: OrderRow, signal: AbortSignal): Promise<string[]> {
+    const result = await this.#callTool(machine, order, "cloud_collect", {}, signal);
+    if (!result.ok) {
+      await this.#step(order.id, "error", `Fichiers non récupérés : ${result.output}`);
+      return [];
+    }
+    let collected: z.infer<typeof cloudCollectResult>;
+    try {
+      collected = cloudCollectResult.parse(JSON.parse(result.output));
+    } catch {
+      await this.#step(order.id, "error", "Réponse illisible de la machine cloud pour les fichiers.");
+      return [];
+    }
+    const ids: string[] = [];
+    for (const file of collected.files) {
+      const body = Buffer.from(file.base64, "base64");
+      const id = randomUUID();
+      const storageKey = `projects/${order.projectId}/${id}`;
+      await this.#ctx.storage.put(storageKey, body, file.contentType);
+      await this.#ctx.db.insert(attachments).values({
+        id,
+        projectId: order.projectId,
+        uploaderId: null,
+        name: file.path.replaceAll("/", "_").slice(0, 200),
+        contentType: file.contentType,
+        size: body.length,
+        storageKey,
+      });
+      ids.push(id);
+    }
+    if (collected.skipped > 0) {
+      await this.#step(
+        order.id,
+        "info",
+        `${collected.skipped} fichier(s) trop gros ou trop nombreux, non rendus.`,
+      );
+    }
+    return ids;
+  }
+
   /** Envoie un outil à la machine et attend son résultat. */
   #callTool(
     machine: LiveConnection,
@@ -731,9 +907,17 @@ export class Kitchen implements KitchenHooks {
     });
   }
 
-  async #finish(order: OrderRow, teamId: string, success: boolean, summary: string, changed: Set<string>) {
+  async #finish(
+    order: OrderRow,
+    teamId: string,
+    success: boolean,
+    summary: string,
+    changed: Set<string>,
+    attachmentIds: string[] = [],
+  ) {
     await this.#end(order, teamId, success ? "done" : "failed", summary, changed);
     await postAgentMessage(this.#ctx, {
+      attachmentIds,
       projectId: order.projectId,
       teamId,
       kind: "cuisinier",
@@ -822,6 +1006,7 @@ export class Kitchen implements KitchenHooks {
         commit: row.commitSha,
         pushed: row.pushedAt !== null,
         handoffNote: row.handoffNote,
+        runOn: row.runOn,
         pullRequest:
           row.pullRequestNumber !== null && row.pullRequestUrl !== null
             ? { number: row.pullRequestNumber, url: row.pullRequestUrl }

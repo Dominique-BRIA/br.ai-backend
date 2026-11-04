@@ -200,6 +200,8 @@ export const order = z.object({
   merged: z.boolean(),
   /** Note laissée par le cuisinier à la machine qui reprend la commande. */
   handoffNote: z.string().nullable(),
+  /** Où la commande s'exécute : la machine d'un membre, ou la machine cloud de <br/>. */
+  runOn: z.enum(["member", "cloud"]),
   /** Dernières étapes, de la plus ancienne à la plus récente. */
   steps: z.array(orderStep),
   createdAt: z.iso.datetime(),
