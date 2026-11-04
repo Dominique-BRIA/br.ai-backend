@@ -52,6 +52,7 @@ export const apiErrorCode = z.enum([
   "order_not_ready",
   "github_failed",
   "signup_limited",
+  "credits_insufficient",
 ]);
 export type ApiErrorCode = z.infer<typeof apiErrorCode>;
 
@@ -268,6 +269,13 @@ export type UpdateMemoryBody = z.input<typeof updateMemoryBody>;
 /** GET /projects/:projectId/orders — les commandes du projet, de la plus récente à la plus ancienne. */
 export const ordersResponse = z.object({ orders: z.array(order) });
 export type OrdersResponse = z.infer<typeof ordersResponse>;
+
+/** POST /projects/:projectId/orders — un membre passe commande lui-même, sans passer par l'agent. */
+export const createOrderBody = z.object({
+  title: z.string().trim().min(1).max(120),
+  brief: z.string().trim().min(1).max(6000),
+});
+export type CreateOrderBody = z.input<typeof createOrderBody>;
 
 /** POST /orders/:orderId/stop — réservé au demandeur et au chef. */
 export const orderResponse = z.object({ order });

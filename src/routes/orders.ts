@@ -1,4 +1,5 @@
 import {
+  createOrderBody,
   type Order,
   type OrdersResponse,
   type OrderValidateResponse,
@@ -9,9 +10,10 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { Kitchen } from "../agents/cuisinier.ts";
 import type { AppContext } from "../context.ts";
-import { orders, projects } from "../db/schema.ts";
+import { orders, projects, users } from "../db/schema.ts";
 import { forbidden, HttpError, notFound, parse } from "../http/errors.ts";
 import { memberIds, requireProject, roleIn } from "../services/access.ts";
+import { quotaReached } from "../services/credits.ts";
 import type { GitHubApp, ServerMerge } from "../services/githubApp.ts";
 import { postAgentMessage } from "../services/messages.ts";
 
@@ -28,6 +30,46 @@ export function orderRoutes(
     const { projectId } = parse(projectParams, request.params);
     await requireProject(ctx, request.userId, projectId);
     return { orders: kitchen ? await kitchen.list(projectId) : [] };
+  });
+
+  /**
+   * Un membre passe commande lui-même, avec un titre et ce qu'il attend. Le serveur l'annonce dans
+   * le chat, puis la commande attend une machine comme celles passées par l'agent.
+   */
+  app.post("/projects/:projectId/orders", async (request): Promise<{ order: Order }> => {
+    const { projectId } = parse(projectParams, request.params);
+    const { title, brief } = parse(createOrderBody, request.body);
+    const { project } = await requireProject(ctx, request.userId, projectId);
+    if (!kitchen) throw new HttpError(404, "not_found", "Le cuisinier n'est pas activé sur ce serveur.");
+    if (await quotaReached(ctx, project.teamId)) {
+      throw new HttpError(
+        402,
+        "credits_insufficient",
+        "Crédit insuffisant : le chef peut saisir un code d'invitation dans la page de l'équipe.",
+      );
+    }
+    const [author] = await ctx.db
+      .select({ displayName: users.displayName })
+      .from(users)
+      .where(eq(users.id, request.userId));
+    // Le titre est écrit par le membre : il reste du texte, même s'il contient du Markdown.
+    const plainTitle = title.replace(/[\\`*_[\]<>#|]/g, "");
+    const announcement = await postAgentMessage(ctx, {
+      projectId,
+      teamId: project.teamId,
+      kind: "serveur",
+      body: `${author?.displayName ?? "Un membre"} a passé une commande au cuisinier : **${plainTitle}**.`,
+    });
+    const order = await kitchen.createOrder({
+      projectId,
+      teamId: project.teamId,
+      title,
+      brief,
+      requestedByUserId: request.userId,
+      sourceMessageId: announcement.id,
+      memoryItemId: null,
+    });
+    return { order };
   });
 
   /** Arrête une commande : réservé au demandeur et au chef (F-CMD-04). */
