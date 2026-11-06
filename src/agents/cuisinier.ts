@@ -20,7 +20,7 @@ import type { AppContext } from "../context.ts";
 import { attachments, localMemories, type OrderStepRow, orders, projects, users } from "../db/schema.ts";
 import type { LiveConnection } from "../realtime/hub.ts";
 import { memberIds } from "../services/access.ts";
-import { CLOUD_MAX_MS, CLOUD_USER_ID, noreplyEmail } from "../services/cloud.ts";
+import { CLOUD_MAX_MS, CLOUD_USER_ID, cloudConfigured, noreplyEmail } from "../services/cloud.ts";
 import type { GitHubApp } from "../services/githubApp.ts";
 import { announceMemoryChange, setMemoryStatus } from "../services/memory.ts";
 import { postAgentMessage } from "../services/messages.ts";
@@ -39,8 +39,10 @@ const CLOUD_WAITING_TEXT =
   "En attente de la machine cloud de <br/> : elle termine une autre commande, ou elle est hors ligne pour l'instant.";
 /** Ce que la machine cloud dit d'elle-même au cuisinier, à la place du propriétaire et de ses dossiers. */
 const CLOUD_MACHINE_LINES = [
-  "Machine : la machine cloud de <br/>, sous Linux (1 Go de mémoire), commandes exécutées par sh.",
-  "Le dossier du projet est un clone du dépôt, ou un dossier vide pour un projet sans dépôt : les fichiers que tu y crées sont rendus à l'équipe. Il n'y a ni secrets ni fichier .env, et rien n'est accessible hors de ce dossier.",
+  "Machine : la machine cloud de <br/>, sous Linux (1 Go de mémoire), commandes exécutées par sh. Il n'y a ni secrets ni fichier .env, et rien n'est accessible hors de ce dossier.",
+  "Le dossier est l'espace réservé du projet : ce qui s'y trouve vient des commandes précédentes et reste pour les suivantes. Regarde d'abord ce qu'il contient avec list_dir. À la fin, tout son contenu est envoyé à l'équipe dans un fichier .zip à télécharger.",
+  "Pour les documents, Python 3 est prêt avec python-pptx (présentations), python-docx (Word), openpyxl (Excel), reportlab (PDF) et matplotlib (graphiques), ainsi que pandoc. Écris un script, lance-le avec run_command, puis vérifie que le fichier existe.",
+  "Les membres ne sont pas forcément développeurs : écris ton bilan en langage simple, sans parler de scripts ni de commandes, et dis quels fichiers ils trouveront dans le .zip. Ne laisse pas de fichiers de travail inutiles dans l'espace.",
 ];
 
 /** Nombre d'étapes gardées dans la commande. */
@@ -249,6 +251,20 @@ export class Kitchen implements KitchenHooks {
       await this.#publish(orderId, teamId);
     }
     return true;
+  }
+
+  /**
+   * Où réaliser une commande passée par le chat. Sans dépôt et sans aucune machine sur le projet,
+   * comme pour un membre qui n'a pas d'ordinateur, elle part sur la machine cloud plutôt que d'attendre.
+   */
+  async defaultRunOn(projectId: string): Promise<"member" | "cloud"> {
+    if (!(await cloudConfigured(this.#ctx))) return "member";
+    const [project] = await this.#ctx.db
+      .select({ repoFullName: projects.repoFullName })
+      .from(projects)
+      .where(eq(projects.id, projectId));
+    if (project?.repoFullName) return "member";
+    return this.#ctx.hub.all().some((connection) => connection.projects.has(projectId)) ? "member" : "cloud";
   }
 
   /** Arrête une commande en attente ou en cours. */
@@ -534,9 +550,7 @@ export class Kitchen implements KitchenHooks {
                   ? await this.#saveBranch(machine, order, branch, parsed.data.summary, signal)
                   : "";
               const files =
-                parsed.data.success && cloud && !branch
-                  ? await this.#collectCloud(machine, order, signal)
-                  : [];
+                parsed.data.success && cloud ? await this.#collectCloud(machine, order, signal) : [];
               return await this.#finish(
                 order,
                 teamId,
@@ -831,52 +845,42 @@ export class Kitchen implements KitchenHooks {
         return fail(`GitHub refuse l'accès au dépôt pour la machine cloud : ${(error as Error).message}`);
       }
     }
-    const prepared = await this.#callTool(machine, order, "cloud_prepare", { repo }, signal);
+    const prepared = await this.#callTool(
+      machine,
+      order,
+      "cloud_prepare",
+      { space: order.projectId, repo },
+      signal,
+    );
     if (!prepared.ok) return fail(`La machine cloud n'a pas pu préparer le dossier : ${prepared.output}`);
     await this.#step(order.id, "info", prepared.output);
     await this.#publish(order.id, teamId);
     return true;
   }
 
-  /** Projet sans dépôt : les fichiers créés sur la machine cloud deviennent des pièces jointes. */
+  /** Le contenu du dossier part en .zip : il devient une pièce jointe du message de fin. */
   async #collectCloud(machine: LiveConnection, order: OrderRow, signal: AbortSignal): Promise<string[]> {
-    const result = await this.#callTool(machine, order, "cloud_collect", {}, signal);
+    const name = `${orderBranch(order.number, order.title).replace("bria/", "commande-")}.zip`;
+    const result = await this.#callTool(machine, order, "cloud_collect", { name }, signal);
     if (!result.ok) {
-      await this.#step(order.id, "error", `Fichiers non récupérés : ${result.output}`);
+      await this.#step(order.id, "error", `Fichier .zip non créé : ${result.output}`);
       return [];
     }
     let collected: z.infer<typeof cloudCollectResult>;
     try {
       collected = cloudCollectResult.parse(JSON.parse(result.output));
     } catch {
-      await this.#step(order.id, "error", "Réponse illisible de la machine cloud pour les fichiers.");
+      await this.#step(order.id, "error", "Réponse illisible de la machine cloud pour le fichier .zip.");
       return [];
     }
-    const ids: string[] = [];
-    for (const file of collected.files) {
-      const body = Buffer.from(file.base64, "base64");
-      const id = randomUUID();
-      const storageKey = `projects/${order.projectId}/${id}`;
-      await this.#ctx.storage.put(storageKey, body, file.contentType);
-      await this.#ctx.db.insert(attachments).values({
-        id,
-        projectId: order.projectId,
-        uploaderId: null,
-        name: file.path.replaceAll("/", "_").slice(0, 200),
-        contentType: file.contentType,
-        size: body.length,
-        storageKey,
-      });
-      ids.push(id);
-    }
-    if (collected.skipped > 0) {
-      await this.#step(
-        order.id,
-        "info",
-        `${collected.skipped} fichier(s) trop gros ou trop nombreux, non rendus.`,
-      );
-    }
-    return ids;
+    await this.#step(order.id, "info", collected.note);
+    if (!collected.attachmentId) return [];
+    // La pièce jointe doit bien appartenir à ce projet.
+    const [file] = await this.#ctx.db
+      .select({ id: attachments.id })
+      .from(attachments)
+      .where(and(eq(attachments.id, collected.attachmentId), eq(attachments.projectId, order.projectId)));
+    return file ? [file.id] : [];
   }
 
   /** Envoie un outil à la machine et attend son résultat. */

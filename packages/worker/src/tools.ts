@@ -1,14 +1,32 @@
 import { execFile, spawn } from "node:child_process";
-import { chmod, lstat, mkdir, readdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  lstat,
+  mkdir,
+  readdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { dirname, join, relative, sep } from "node:path";
 import { cloudTools, cookTools, gitTools, isCloudTool, isCookTool, isGitTool } from "@br-ia/protocol";
 import { dangerousCommand, IGNORED_DIRECTORIES, resolveInProject } from "@br-ia/protocol/safety";
+import { zipSync } from "fflate";
 
 const MAX_READ_BYTES = 300_000;
 const MAX_OUTPUT = 60_000;
-/** Une réponse d'outil est limitée à 200 000 caractères : les fichiers rendus restent en dessous. */
-const MAX_COLLECT_CHARS = 180_000;
-const MAX_COLLECT_FILES = 20;
+/** Le .zip devient une pièce jointe : même limite que les autres (20 Mo). */
+const MAX_ZIP_BYTES = 20 * 1024 * 1024;
+const MAX_ZIP_INPUT_BYTES = 150 * 1024 * 1024;
+/** Espace réservé d'un projet : prévenu, puis refusé (la VM a 30 Go pour tous les projets). */
+const SPACE_WARNING_BYTES = 200 * 1024 * 1024;
+const SPACE_LIMIT_BYTES = 500 * 1024 * 1024;
+/** Effacés entre deux commandes : une installation les recrée, et ils prendraient toute la place. */
+const DISPOSABLE_DIRECTORIES = ["node_modules", ".venv", "venv", "__pycache__", ".next", ".turbo"];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export interface Outcome {
   ok: boolean;
@@ -16,8 +34,12 @@ export interface Outcome {
 }
 
 export interface ToolsOptions {
-  /** Dossier des commandes : un sous-dossier par commande, effacé à la fin. */
+  /** Dossier de la commande en cours, seul accessible au compte des commandes. */
   workRoot: string;
+  /** Coffre des espaces réservés aux projets, fermé au compte des commandes. */
+  spacesRoot: string;
+  /** Envoie le .zip d'une commande au serveur et renvoie l'identifiant de la pièce jointe. */
+  deliver: (orderId: string, name: string, bytes: Uint8Array) => Promise<string>;
   /** Script qui donne le jeton à Git (voir main.ts). */
   askpass: string;
   /**
@@ -30,25 +52,6 @@ export interface ToolsOptions {
 }
 
 const refused = (output: string): Outcome => ({ ok: false, output });
-
-const CONTENT_TYPES: Record<string, string> = {
-  md: "text/markdown",
-  txt: "text/plain",
-  html: "text/html",
-  css: "text/css",
-  js: "text/javascript",
-  ts: "text/plain",
-  py: "text/x-python",
-  json: "application/json",
-  csv: "text/csv",
-  svg: "image/svg+xml",
-  png: "image/png",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  pdf: "application/pdf",
-};
-const contentTypeOf = (path: string) =>
-  CONTENT_TYPES[path.split(".").at(-1)?.toLowerCase() ?? ""] ?? "application/octet-stream";
 
 /** Environnement réduit au strict nécessaire : ni jeton, ni rien hérité du travailleur. */
 const safeEnv = (home: string) => ({
@@ -66,6 +69,12 @@ export class CloudTools {
   readonly #options: ToolsOptions;
   #orderId: string | null = null;
   #dir: string | null = null;
+  /** Où ranger le dossier à la fin : l'espace du projet ; `null` pour un clone, effacé. */
+  #keep: string | null = null;
+  /** Processus de la commande en cours, pour l'arrêter quand la commande s'arrête. */
+  #pid: number | undefined;
+  /** Les outils passent un par un : un rangement ne croise jamais la préparation suivante. */
+  #queue: Promise<unknown> = Promise.resolve();
   /** Jeton d'installation GitHub de la commande : gardé en mémoire, jamais écrit ni transmis à l'IA. */
   #token: string | null = null;
 
@@ -73,11 +82,17 @@ export class CloudTools {
     this.#options = options;
   }
 
-  async handle(orderId: string, tool: string, input: unknown): Promise<Outcome> {
-    const outcome = await this.#dispatch(orderId, tool, input).catch(
-      (error: unknown): Outcome => ({ ok: false, output: (error as Error).message }),
-    );
-    return { ok: outcome.ok, output: this.#mask(outcome.output) };
+  handle(orderId: string, tool: string, input: unknown): Promise<Outcome> {
+    // Fin de commande : ce qui tourne encore s'arrête tout de suite, sans attendre son tour.
+    if (tool === "cloud_cleanup" && this.#orderId === orderId) void this.#killCommands(this.#pid);
+    const run = this.#queue.then(async () => {
+      const outcome = await this.#dispatch(orderId, tool, input).catch(
+        (error: unknown): Outcome => ({ ok: false, output: (error as Error).message }),
+      );
+      return { ok: outcome.ok, output: this.#mask(outcome.output) };
+    });
+    this.#queue = run;
+    return run;
   }
 
   /** Par sécurité, le jeton ne ressort jamais d'une réponse, même dans une erreur de Git. */
@@ -90,10 +105,12 @@ export class CloudTools {
       if (tool === "cloud_prepare") {
         const parsed = cloudTools.cloud_prepare.input.safeParse(rawInput);
         if (!parsed.success) return refused("Paramètres invalides.");
-        return this.#prepare(orderId, parsed.data.repo);
+        return this.#prepare(orderId, parsed.data.space, parsed.data.repo);
       }
       if (tool === "cloud_cleanup") return this.#cleanup(orderId);
-      return this.#collect(orderId);
+      const parsed = cloudTools.cloud_collect.input.safeParse(rawInput);
+      if (!parsed.success) return refused("Nom de fichier invalide.");
+      return this.#collect(orderId, parsed.data.name);
     }
     const root = this.#dir;
     if (!root || this.#orderId !== orderId) return refused("Le dossier de cette commande n'est pas prêt.");
@@ -265,6 +282,7 @@ export class CloudTools {
         )
       : spawn(command, { cwd: root, shell: true, env, detached: true });
 
+    this.#pid = child.pid;
     return new Promise((resolve) => {
       let output = "";
       const append = (chunk: Buffer) => {
@@ -334,25 +352,50 @@ export class CloudTools {
 
   async #prepare(
     orderId: string,
+    space: string,
     repo: { fullName: string; token: string; author: { name: string; email: string } } | null,
   ): Promise<Outcome> {
-    if (!/^[0-9a-f-]{36}$/.test(orderId)) return refused("Commande invalide.");
-    if (this.#orderId && this.#orderId !== orderId) await this.#cleanup(this.#orderId);
-    const dir = join(this.#options.workRoot, orderId);
-    await this.#erase(dir);
+    if (!UUID.test(orderId) || !UUID.test(space)) return refused("Commande invalide.");
+    if (this.#orderId) await this.#cleanup(this.#orderId);
+    const dir = join(this.#options.workRoot, space);
+    const { runAs, spacesRoot } = this.#options;
     await this.#erase(homeOf(dir));
-    await mkdir(dir, { recursive: true });
     await mkdir(homeOf(dir), { recursive: true });
-    // Avec un compte séparé pour les commandes : groupe partagé, et sans droit de renommer `.git`.
-    if (this.#options.runAs) {
-      await chmod(dir, 0o3770);
-      await chmod(homeOf(dir), 0o2770);
+    if (runAs) await chmod(homeOf(dir), 0o2770);
+    await this.#erase(dir);
+
+    if (!repo) {
+      // L'espace du projet sort du coffre le temps de la commande : aucune autre n'y a accès.
+      const stored = join(spacesRoot, space);
+      const size = await sizeOf(stored);
+      if (size > SPACE_LIMIT_BYTES) {
+        return refused(
+          `L'espace de ce projet est plein (${megabytes(size)} Mo sur ${megabytes(SPACE_LIMIT_BYTES)} Mo). Contactez l'équipe de <br/>.`,
+        );
+      }
+      if (size >= 0) await rename(stored, dir);
+      else await mkdir(dir, { recursive: true });
+      if (runAs) await chmod(dir, 0o2770);
+      this.#orderId = orderId;
+      this.#dir = dir;
+      this.#keep = stored;
+      this.#token = null;
+      return {
+        ok: true,
+        output:
+          size >= SPACE_WARNING_BYTES
+            ? `Espace du projet prêt, presque plein (${megabytes(size)} Mo) : retire ce qui ne sert plus.`
+            : "Espace du projet prêt sur la machine cloud.",
+      };
     }
+
+    await mkdir(dir, { recursive: true });
+    // Avec un compte séparé pour les commandes : groupe partagé, et sans droit de renommer `.git`.
+    if (runAs) await chmod(dir, 0o3770);
     this.#orderId = orderId;
     this.#dir = dir;
-    this.#token = repo?.token ?? null;
-    if (!repo) return { ok: true, output: "Dossier de travail vide prêt sur la machine cloud." };
-
+    this.#keep = null;
+    this.#token = repo.token;
     const base = this.#options.cloneBase ?? "https://github.com/";
     const cloned = await this.#git(dir, ["clone", `${base}${repo.fullName}.git`, "."], 300_000);
     if (cloned.code !== 0) return refused(`Clonage impossible : ${firstLines(cloned.stderr)}`);
@@ -363,15 +406,16 @@ export class CloudTools {
     return { ok: true, output: `Dépôt ${repo.fullName} cloné sur la machine cloud.` };
   }
 
-  async #collect(orderId: string): Promise<Outcome> {
+  /** Met le contenu du dossier dans un .zip et l'envoie au serveur. */
+  async #collect(orderId: string, name: string): Promise<Outcome> {
     const root = this.#dir;
     if (!root || this.#orderId !== orderId) return refused("Le dossier de cette commande n'est pas prêt.");
-    const files: { path: string; contentType: string; base64: string }[] = [];
-    let skipped = 0;
-    let budget = MAX_COLLECT_CHARS;
+    const files: Record<string, Uint8Array> = {};
+    let count = 0;
+    let total = 0;
     const walk = async (folder: string): Promise<void> => {
       const entries = await readdir(folder, { withFileTypes: true }).catch(() => []);
-      for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      for (const entry of entries) {
         const full = join(folder, entry.name);
         if (entry.isDirectory()) {
           if (!IGNORED_DIRECTORIES.has(entry.name)) await walk(full);
@@ -380,46 +424,84 @@ export class CloudTools {
         // Les liens symboliques ne sont pas rendus : ils pourraient viser n'importe quel fichier.
         if (!entry.isFile()) continue;
         const info = await lstat(full).catch(() => null);
-        const needed = Math.ceil((info?.size ?? 0) / 3) * 4;
-        if (!info || files.length >= MAX_COLLECT_FILES || needed > budget) {
-          skipped++;
-          continue;
-        }
+        if (!info || total + info.size > MAX_ZIP_INPUT_BYTES) continue;
         const content = await readFile(full).catch(() => null);
-        if (!content) {
-          skipped++;
-          continue;
-        }
-        budget -= needed;
-        const path = relative(root, full).split(sep).join("/");
-        files.push({ path, contentType: contentTypeOf(path), base64: content.toString("base64") });
+        if (!content) continue;
+        total += content.length;
+        count++;
+        files[relative(root, full).split(sep).join("/")] = content;
       }
     };
     await walk(root);
-    return { ok: true, output: JSON.stringify({ files, skipped }) };
+    const answer = (attachmentId: string | null, note: string): Outcome => ({
+      ok: true,
+      output: JSON.stringify({ attachmentId, files: count, note }),
+    });
+    if (count === 0) return answer(null, "Aucun fichier à envoyer dans l'espace du projet.");
+    const zip = zipSync(files);
+    if (zip.length > MAX_ZIP_BYTES) {
+      return answer(
+        null,
+        `Le fichier .zip dépasse la limite (${megabytes(zip.length)} Mo sur ${megabytes(MAX_ZIP_BYTES)} Mo) : les fichiers restent dans l'espace du projet.`,
+      );
+    }
+    const id = await this.#options.deliver(orderId, name, zip);
+    return answer(id, `${count} fichier(s) envoyé(s) dans ${name} (${megabytes(zip.length)} Mo).`);
   }
 
+  /** Fin de commande : l'espace du projet retourne au coffre ; un clone de dépôt est effacé. */
   async #cleanup(orderId: string): Promise<Outcome> {
     if (this.#orderId !== orderId) return { ok: true, output: "Rien à effacer." };
-    await this.#killCommands();
-    if (this.#dir) {
-      await this.#erase(this.#dir);
-      await this.#erase(homeOf(this.#dir));
+    const dir = this.#dir;
+    if (dir) {
+      if (this.#keep) await this.#store(dir, this.#keep);
+      else await this.#erase(dir);
+      await this.#erase(homeOf(dir));
     }
     this.#orderId = null;
     this.#dir = null;
+    this.#keep = null;
     this.#token = null;
-    return { ok: true, output: "Dossier de la commande effacé." };
+    return { ok: true, output: "Dossier de la commande rangé." };
   }
 
-  /** Efface un dossier, y compris ce que le compte des commandes y a verrouillé pour lui seul. */
-  async #erase(dir: string): Promise<void> {
+  /** Range un espace dans le coffre, sans les dossiers qu'une installation peut recréer. */
+  async #store(dir: string, stored: string): Promise<void> {
+    await this.#unlock(dir);
+    for (const name of DISPOSABLE_DIRECTORIES) await rm(join(dir, name), { recursive: true, force: true });
+    await rm(stored, { recursive: true, force: true });
+    await rename(dir, stored);
+  }
+
+  /**
+   * Après une coupure : les espaces restés dehors retournent au coffre, les clones de dépôts et
+   * les dossiers personnels sont effacés.
+   */
+  async recover(): Promise<void> {
+    const entries = await readdir(this.#options.workRoot, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      const dir = join(this.#options.workRoot, entry.name);
+      if (UUID.test(entry.name) && entry.isDirectory() && !(await isClone(dir))) {
+        await this.#store(dir, join(this.#options.spacesRoot, entry.name));
+      } else {
+        await this.#erase(dir);
+      }
+    }
+  }
+
+  /** Rend au travailleur ce que le compte des commandes a pu verrouiller pour lui seul. */
+  async #unlock(dir: string): Promise<void> {
     const { runAs } = this.#options;
     if (runAs) {
       await new Promise<void>((resolve) => {
         execFile("sudo", ["-n", "-u", runAs, "/usr/bin/chmod", "-R", "ug+rwX", dir], () => resolve());
       });
     }
+  }
+
+  /** Efface un dossier, y compris ce que le compte des commandes y a verrouillé pour lui seul. */
+  async #erase(dir: string): Promise<void> {
+    await this.#unlock(dir);
     await rm(dir, { recursive: true, force: true });
   }
 
@@ -504,6 +586,23 @@ export class CloudTools {
 }
 
 const homeOf = (dir: string) => `${dir}-maison`;
+const megabytes = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1).replace(".0", "");
+
+/** Taille d'un dossier en octets, sans suivre les liens ; -1 s'il n'existe pas. */
+async function sizeOf(dir: string): Promise<number> {
+  const entries = await readdir(dir, { withFileTypes: true }).catch(() => null);
+  if (!entries) return -1;
+  let total = 0;
+  for (const entry of entries) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) total += Math.max(0, await sizeOf(full));
+    else if (entry.isFile()) total += (await lstat(full).catch(() => null))?.size ?? 0;
+  }
+  return total;
+}
+
+/** Vrai si le dossier est un clone de dépôt. */
+const isClone = async (dir: string) => (await lstat(join(dir, ".git")).catch(() => null)) !== null;
 
 const firstLines = (text: string) => text.split("\n").slice(0, 3).join(" ").slice(0, 400);
 

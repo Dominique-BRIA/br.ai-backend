@@ -115,7 +115,9 @@ export const COMMAND_TOOLS: CookToolName[] = ["run_command"];
 export const cloudTools = {
   cloud_prepare: {
     input: z.object({
-      /** Projet avec dépôt : de quoi le cloner et commiter au nom du demandeur ; sinon dossier vide. */
+      /** Le projet : sans dépôt, son espace réservé est conservé d'une commande à l'autre. */
+      space: z.uuid(),
+      /** Projet avec dépôt : de quoi le cloner et commiter au nom du demandeur ; sinon son espace. */
       repo: z
         .object({
           fullName: z.string().regex(/^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/),
@@ -126,7 +128,8 @@ export const cloudTools = {
         .nullable(),
     }),
   },
-  cloud_collect: { input: z.object({}) },
+  /** Met les fichiers du dossier dans un .zip et l'envoie au serveur. */
+  cloud_collect: { input: z.object({ name: z.string().regex(/^[A-Za-z0-9._-]{1,120}$/) }) },
   cloud_cleanup: { input: z.object({}) },
 } as const;
 export type CloudToolName = keyof typeof cloudTools;
@@ -135,12 +138,10 @@ export function isCloudTool(name: string): name is CloudToolName {
   return Object.hasOwn(cloudTools, name);
 }
 
-/** Fichiers rendus par la machine cloud pour un projet sans dépôt (contenu en base64). */
+/** Réponse de cloud_collect : la pièce jointe créée (ou pourquoi il n'y en a pas). */
 export const cloudCollectResult = z.object({
-  files: z
-    .array(z.object({ path: z.string().max(300), contentType: z.string().max(100), base64: z.string() }))
-    .max(20),
-  /** Fichiers laissés de côté : trop gros, ou trop nombreux. */
-  skipped: z.number().int().nonnegative(),
+  attachmentId: z.uuid().nullable(),
+  files: z.number().int().nonnegative(),
+  note: z.string(),
 });
 export type CloudCollectResult = z.infer<typeof cloudCollectResult>;

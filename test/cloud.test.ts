@@ -30,6 +30,22 @@ const order = (runOn: "member" | "cloud", title = "Fiche de révision") =>
     body: { title, brief: "Écrire une fiche en Markdown.", runOn },
   });
 
+/** La machine envoie un .zip au serveur, et le code de réponse attendu est vérifié. */
+async function deliver(token: string, orderId: string, status: number) {
+  const answer = await t.app.inject({
+    method: "POST",
+    url: `/cloud/orders/${orderId}/deliverable`,
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/zip",
+      "x-bria-file-name": "commande-1.zip",
+    },
+    payload: Buffer.from("zip"),
+  });
+  expect(answer.statusCode).toBe(status);
+  return answer;
+}
+
 async function waitFor(condition: () => Promise<boolean>, timeoutMs = 10_000) {
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
@@ -83,14 +99,9 @@ describe("machine cloud", () => {
         const output =
           call.tool === "cloud_collect"
             ? JSON.stringify({
-                files: [
-                  {
-                    path: "fiche.md",
-                    contentType: "text/markdown",
-                    base64: Buffer.from("# Fiche").toString("base64"),
-                  },
-                ],
-                skipped: 0,
+                attachmentId: (await deliver(created.json.token, call.orderId, 200)).json().attachmentId,
+                files: 1,
+                note: "1 fichier(s) envoyé(s).",
               })
             : "Dossier de travail prêt.";
         live.socket.send(JSON.stringify({ type: "tool.result", callId: call.callId, ok: true, output }));
@@ -117,7 +128,8 @@ describe("machine cloud", () => {
       "cloud_collect",
       "cloud_cleanup",
     ]);
-    expect(tools[0]?.input).toEqual({ repo: null });
+    expect(tools[0]?.input).toEqual({ space: projectId, repo: null });
+    expect(tools[2]?.input).toEqual({ name: "commande-1-fiche-de-revision.zip" });
     // Pas de coffre de secrets sur la machine cloud, ni de consignes sur un propriétaire.
     const request = ai.toolRequests.at(-1);
     expect(request?.tools.map((tool) => tool.function.name)).not.toContain("write_env");
@@ -127,8 +139,14 @@ describe("machine cloud", () => {
       await t.call<{ messages: Message[] }>("GET", `/projects/${projectId}/messages`, { token: ali.token })
     ).json;
     const final = messages.find((message) => message.body.includes("terminée"));
-    expect(final?.attachments).toMatchObject([{ name: "fiche.md", contentType: "text/markdown", size: 7 }]);
+    expect(final?.attachments).toMatchObject([{ name: "commande-1.zip", contentType: "application/zip" }]);
     expect(messages.some((message) => message.body.includes("sur la machine cloud de <br/>"))).toBe(true);
+
+    // Une fois la commande terminée, plus personne ne peut y déposer de fichier.
+    await deliver(created.json.token, placed.json.order.id, 403);
+    // Ni un membre, quand bien même il demanderait la commande : la route est réservée à la machine.
+    await deliver(ali.token, placed.json.order.id, 403);
+    await deliver("jeton-invente", placed.json.order.id, 401);
     live.socket.close();
   });
 

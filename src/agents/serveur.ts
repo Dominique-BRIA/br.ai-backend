@@ -307,6 +307,7 @@ export class ServeurAgent {
       await this.kitchen.createOrder({
         projectId: message.projectId,
         teamId,
+        runOn: await this.kitchen.defaultRunOn(message.projectId),
         title: result.order.title,
         brief: result.order.brief,
         requestedByUserId: author.userId,

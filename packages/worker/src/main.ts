@@ -1,6 +1,6 @@
 import { chmod, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { connectWorker } from "./connection.ts";
+import { connectWorker, deliverTo } from "./connection.ts";
 import { CloudTools } from "./tools.ts";
 
 /**
@@ -18,10 +18,14 @@ if (!serverUrl || !token) {
 delete process.env.BRIA_MACHINE_TOKEN;
 
 const workRoot = process.env.BRIA_WORK_ROOT ?? "/srv/bria/travail";
+const spacesRoot = process.env.BRIA_SPACES_ROOT ?? "/srv/bria/espaces";
 const stateDir = process.env.BRIA_STATE_DIR ?? "/srv/bria/etat";
 const runAs = process.env.BRIA_RUN_AS || undefined;
 await mkdir(workRoot, { recursive: true });
 await mkdir(stateDir, { recursive: true });
+await mkdir(spacesRoot, { recursive: true });
+// Le coffre des espaces : fermé au compte des commandes, qui ne voit que le projet en cours.
+await chmod(spacesRoot, 0o700);
 // Fichiers du travailleur modifiables par le groupe partagé avec le compte des commandes.
 process.umask(0o002);
 
@@ -36,10 +40,19 @@ await chmod(askpass, 0o700);
 if (!runAs)
   console.error("BRIA_RUN_AS est absent : les commandes de l'IA ne sont pas isolées du travailleur.");
 
+const tools = new CloudTools({
+  workRoot,
+  spacesRoot,
+  askpass,
+  runAs,
+  deliver: deliverTo(serverUrl, token),
+});
+await tools.recover();
+
 const connection = connectWorker({
   serverUrl,
   token,
-  tools: new CloudTools({ workRoot, askpass, runAs }),
+  tools,
   log: {
     info: (text) => console.log(text),
     error: (text) => console.error(text),

@@ -8,6 +8,24 @@ const MAX_RESULT = 190_000;
 const PING_MS = 30_000;
 const MAX_RETRY_MS = 60_000;
 
+/** Envoie le .zip d'une commande au serveur, avec le jeton de la machine. */
+export function deliverTo(serverUrl: string, token: string) {
+  return async (orderId: string, name: string, bytes: Uint8Array): Promise<string> => {
+    const response = await fetch(`${serverUrl.replace(/\/+$/, "")}/cloud/orders/${orderId}/deliverable`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/zip",
+        "x-bria-file-name": name,
+      },
+      body: bytes,
+      signal: AbortSignal.timeout(180_000),
+    });
+    if (!response.ok) throw new Error(`Envoi du fichier .zip refusé (${response.status}).`);
+    return ((await response.json()) as { attachmentId: string }).attachmentId;
+  };
+}
+
 export interface WorkerLog {
   info(text: string): void;
   error(text: string): void;

@@ -16,6 +16,7 @@ import { adminAuthRoutes } from "./routes/adminAuth.ts";
 import { attachmentRoutes } from "./routes/attachments.ts";
 import { authRoutes } from "./routes/auth.ts";
 import { betaRequestRoutes } from "./routes/beta.ts";
+import { cloudDeliveryRoutes } from "./routes/cloud.ts";
 import { githubAppRoutes, githubPublicRoutes } from "./routes/github.ts";
 import { meRoutes } from "./routes/me.ts";
 import { memoryRoutes } from "./routes/memory.ts";
@@ -117,6 +118,7 @@ export async function buildApp(options: AppOptions) {
     authRoutes(scope, ctx, options.newAccountCodesPerHour, options.siteRelayKey),
   );
   await app.register(async (scope) => adminAuthRoutes(scope, ctx));
+  await app.register(async (scope) => cloudDeliveryRoutes(scope, ctx));
   await app.register(async (scope) => betaRequestRoutes(scope, ctx));
   await app.register(async (scope) => {
     requireAuth(scope, ctx);

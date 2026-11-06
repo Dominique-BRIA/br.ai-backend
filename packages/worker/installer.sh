@@ -14,7 +14,7 @@ NODE_VERSION="24.14.0"
 echo "== Paquets"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
-apt-get install -y git curl ca-certificates xz-utils sudo iptables python3 procps
+apt-get install -y git curl ca-certificates xz-utils sudo iptables python3 python3-venv procps pandoc fonts-dejavu-core
 
 echo "== Node.js $NODE_VERSION"
 if ! node --version 2>/dev/null | grep -q "^v$NODE_VERSION$"; then
@@ -31,15 +31,25 @@ if [ ! -f /swapfile ]; then
   echo '/swapfile none swap sw 0 0' >> /etc/fstab
 fi
 
+echo "== Python et bibliothèques de documents"
+if [ ! -x /opt/bria-python/bin/python ]; then
+  python3 -m venv /opt/bria-python
+fi
+/opt/bria-python/bin/pip install --quiet --upgrade pip
+/opt/bria-python/bin/pip install --quiet python-pptx python-docx openpyxl reportlab matplotlib pillow
+
 echo "== Comptes et dossiers"
 id bria-run >/dev/null 2>&1 || useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin bria-run
 id bria >/dev/null 2>&1 || useradd --system --home-dir /srv/bria --shell /usr/sbin/nologin --groups bria-run bria
-mkdir -p /srv/bria/travail /srv/bria/etat /etc/bria
+mkdir -p /srv/bria/travail /srv/bria/etat /srv/bria/espaces /etc/bria
 chown bria:bria-run /srv/bria /srv/bria/travail
 chmod 0750 /srv/bria
 chmod 2770 /srv/bria/travail
 chown bria:bria /srv/bria/etat
 chmod 0700 /srv/bria/etat
+# Le coffre des espaces des projets : fermé à bria-run, qui ne voit que le projet en cours.
+chown bria:bria /srv/bria/espaces
+chmod 0700 /srv/bria/espaces
 
 # Le travailleur lance les commandes de l'IA sous bria-run, et rien d'autre.
 cat > /etc/sudoers.d/bria <<'EOF'
@@ -72,6 +82,7 @@ BRIA_SERVER_URL=$SERVER_URL
 BRIA_MACHINE_TOKEN=$TOKEN
 BRIA_WORK_ROOT=/srv/bria/travail
 BRIA_STATE_DIR=/srv/bria/etat
+BRIA_SPACES_ROOT=/srv/bria/espaces
 BRIA_RUN_AS=bria-run
 EOF
   umask 022
@@ -105,10 +116,10 @@ Wants=network-online.target
 User=bria
 Group=bria-run
 EnvironmentFile=/etc/bria/worker.env
+Environment=PATH=/opt/bria-python/bin:/usr/local/bin:/usr/bin:/bin
 WorkingDirectory=/opt/bria/packages/worker
-# Lancés en root : pare-feu, et ménage de ce qu'une coupure aurait laissé.
+# Lancé en root. Le travailleur range lui-même ce qu'une coupure aurait laissé.
 ExecStartPre=+/usr/local/sbin/bria-pare-feu
-ExecStartPre=+/usr/bin/find /srv/bria/travail -mindepth 1 -delete
 ExecStart=/usr/local/bin/node src/main.ts
 Restart=always
 RestartSec=15
