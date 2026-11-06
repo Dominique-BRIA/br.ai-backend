@@ -1,4 +1,4 @@
-import type { MemoryItem, Message, TeamRole } from "@br-ia/protocol";
+import type { MemoryItem, Message, Order, TeamRole } from "@br-ia/protocol";
 import { and, asc, desc, eq, lte } from "drizzle-orm";
 import { z } from "zod";
 import { type Ai, AiUnavailableError, type ChatMessage, type ModelChoice } from "../ai/client.ts";
@@ -42,6 +42,8 @@ const output = z.object({
     .object({
       title: z.string().trim().min(1).max(120),
       brief: z.string().trim().min(1).max(6000),
+      /** Numéro de la commande que cette demande prolonge ; absent : une nouvelle commande. */
+      continues: z.number().int().positive().nullable().optional(),
     })
     .nullable()
     .default(null),
@@ -82,6 +84,8 @@ Pour chaque nouveau message, classe-le dans une catégorie :
 - "contradiction" : le message contredit une décision de la mémoire ou la position d'un autre membre. Tu réponds en signalant le désaccord avec tact, et tu proposes un compromis concret ; tu ajoutes ce compromis à la mémoire (type "compromise").
 - "request" : on demande un livrable (code, document, schéma…) que le cuisinier (l'agent qui code sur la machine du demandeur) peut réaliser dans le dossier du projet. Tu l'ajoutes à la mémoire (type "task").
   - Si la demande est assez précise pour être réalisée, passe la commande : remplis "order" avec un titre court et des consignes complètes et autonomes pour le cuisinier (objectif, fichiers ou parties concernés s'ils sont connus, contraintes, critères de réussite, décisions de la mémoire à respecter). Ta réponse indique en une phrase que la commande part en cuisine.
+  - Si la demande prolonge, corrige ou complète une commande récente (« ajoute », « corrige », « change », « et aussi »), ce n'est pas une nouvelle commande : mets son numéro dans "continues", et dans "brief" seulement ce qui est demandé en plus. Une nouvelle commande est réservée à un travail sans lien avec les précédentes.
+  - N'envoie jamais le membre régler lui-même ce que le cuisinier peut faire, et ne pose une question que si le travail est impossible sans la réponse.
   - Sinon, laisse "order" à null et pose les questions qui manquent, brièvement.
 
 Mémoire du projet :
@@ -209,6 +213,7 @@ export class ServeurAgent {
       return;
     }
 
+    const recentOrders = this.kitchen ? (await this.kitchen.list(message.projectId)).slice(0, 6) : [];
     const [members, history, memory] = await Promise.all([
       this.#members(teamId),
       this.#history(message),
@@ -225,7 +230,7 @@ export class ServeurAgent {
         userId: author.userId,
         projectId: message.projectId,
         json: true,
-        messages: this.#prompt(message, members, history, memory, refs),
+        messages: this.#prompt(message, members, history, memory, refs, recentOrders),
         accept: (content) => {
           const parsed = parseServeurOutput(content);
           return parsed !== null && (!mentioned || Boolean(parsed.reply));
@@ -304,16 +309,23 @@ export class ServeurAgent {
         replyToId: message.id,
       });
     } else if (result.order && this.kitchen) {
-      await this.kitchen.createOrder({
-        projectId: message.projectId,
-        teamId,
-        runOn: await this.kitchen.defaultRunOn(message.projectId),
-        title: result.order.title,
-        brief: result.order.brief,
-        requestedByUserId: author.userId,
-        sourceMessageId: message.id,
-        memoryItemId: taskId,
-      });
+      // Une suite continue la commande au lieu d'en créer une nouvelle.
+      const followed = result.order.continues
+        ? recentOrders.find((order) => order.number === result?.order?.continues && !order.merged)
+        : undefined;
+      const continued =
+        followed && (await this.kitchen.followUp(followed.id, teamId, result.order.brief, author.userId));
+      if (!continued)
+        await this.kitchen.createOrder({
+          projectId: message.projectId,
+          teamId,
+          runOn: await this.kitchen.defaultRunOn(message.projectId),
+          title: result.order.title,
+          brief: result.order.brief,
+          requestedByUserId: author.userId,
+          sourceMessageId: message.id,
+          memoryItemId: taskId,
+        });
     }
   }
 
@@ -323,6 +335,7 @@ export class ServeurAgent {
     history: Message[],
     memory: MemoryItem[],
     refs: Map<string, MemoryItem>,
+    recentOrders: Order[],
   ): ChatMessage[] {
     const name = authorLabel;
     const team = members.map(
@@ -349,6 +362,14 @@ export class ServeurAgent {
       "Mémoire du projet, éléments ouverts :",
       ...(openLines.length > 0 ? openLines : ["(aucun)"]),
       ...(closedLines.length > 0 ? ["", "Décisions passées :", ...closedLines] : []),
+      "",
+      "Commandes récentes du cuisinier :",
+      ...(recentOrders.length > 0
+        ? recentOrders.map(
+            (order) =>
+              `- n° ${order.number} « ${order.title} » (${order.merged ? "fusionnée : ne peut plus continuer" : order.status})${order.summary ? ` : ${order.summary.slice(0, 200)}` : ""}`,
+          )
+        : ["(aucune)"]),
       "",
       "Historique récent du chat :",
       ...(transcript.length > 0 ? transcript : ["(vide)"]),

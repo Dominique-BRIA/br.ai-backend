@@ -1,0 +1,1 @@
+ALTER TABLE "orders" ADD COLUMN "follow_up" text;

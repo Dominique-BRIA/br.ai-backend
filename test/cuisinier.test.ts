@@ -94,6 +94,7 @@ describe("cuisinier", () => {
     ai.turns.push(
       { calls: [{ name: "read_file", input: { path: "index.html" } }] },
       { calls: [{ name: "write_file", input: { path: "contact.html", content: "<form></form>" } }] },
+      { calls: [{ name: "read_file", input: { path: "contact.html" } }] },
       {
         calls: [{ name: "finish", input: { success: true, summary: "La page **contact.html** est créée." } }],
       },
@@ -104,7 +105,7 @@ describe("cuisinier", () => {
     await waitFor(async () => (await orders())[0]?.status === "done");
     await aliMachine.close();
 
-    expect(aliMachine.tools).toEqual(["read_file", "write_file"]);
+    expect(aliMachine.tools).toEqual(["read_file", "write_file", "read_file"]);
     const done = (await orders())[0];
     expect(done).toMatchObject({
       status: "done",

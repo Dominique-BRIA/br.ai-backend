@@ -369,6 +369,7 @@ describe("travailleur relié au serveur", () => {
   it("envoie le .zip dans le chat, téléchargeable par l'équipe", async () => {
     ai.turns.push(
       { calls: [{ name: "write_file", input: { path: "fiche.md", content: "# Fiche" } }] },
+      { calls: [{ name: "read_file", input: { path: "fiche.md" } }] },
       { calls: [{ name: "finish", input: { success: true, summary: "Fiche prête." } }] },
     );
     const placed = await t.call<{ order: Order }>("POST", `/projects/${projectId}/orders`, {
@@ -391,6 +392,7 @@ describe("travailleur relié au serveur", () => {
     ai.turns.push(
       { calls: [{ name: "read_file", input: { path: "fiche.md" } }] },
       { calls: [{ name: "write_file", input: { path: "plan.md", content: "# Plan" } }] },
+      { calls: [{ name: "read_file", input: { path: "plan.md" } }] },
       { calls: [{ name: "finish", input: { success: true, summary: "Plan ajouté." } }] },
     );
     const placed = await t.call<{ order: Order }>("POST", `/projects/${projectId}/orders`, {
@@ -439,6 +441,7 @@ describe("travailleur relié au serveur", () => {
 
     ai.turns.push(
       { calls: [{ name: "write_file", input: { path: "tarifs.html", content: "<p>Tarifs</p>\n" } }] },
+      { calls: [{ name: "read_file", input: { path: "tarifs.html" } }] },
       { calls: [{ name: "finish", input: { success: true, summary: "Page créée." } }] },
     );
     const placed = await t.call<{ order: Order }>("POST", `/projects/${projectId}/orders`, {

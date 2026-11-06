@@ -26,6 +26,7 @@ import { announceMemoryChange, setMemoryStatus } from "../services/memory.ts";
 import { postAgentMessage } from "../services/messages.ts";
 import { orderBranch } from "../services/projects.ts";
 import { secretNames } from "../services/secrets.ts";
+import { WorkCheck } from "./workCheck.ts";
 
 /** Nombre maximal de tours de l'IA pour une commande. */
 const MAX_TURNS = 40;
@@ -75,7 +76,7 @@ const TOOLS: ToolDefinition[] = [
     function: {
       name: "finish",
       description:
-        "Termine la commande avec un bilan pour l'équipe : ce qui a été fait, fichiers modifiés, tests lancés et leur résultat, ce qui reste à faire.",
+        "Termine la commande, seulement après avoir vérifié ton travail, avec un bilan pour l'équipe : ce qui a été fait, ce que tu as vérifié et le résultat, tes choix, ce qui reste à faire.",
       parameters: z.toJSONSchema(finishInput) as Record<string, unknown>,
     },
   },
@@ -98,7 +99,10 @@ const SYSTEM_PROMPT = `Tu es le cuisinier de <br/> : tu réalises une commande (
 Méthode :
 - Commence par comprendre le projet : list_dir, read_file, search. Ne modifie jamais un fichier sans l'avoir lu.
 - Modifie le minimum nécessaire, dans le style du code existant. edit_file pour une modification ciblée, write_file pour créer un fichier.
-- Vérifie ton travail quand c'est possible : lance les tests ou la compilation avec run_command, et corrige ce qui échoue.
+- Tu travailles seul, jusqu'au bout. Le membre attend un résultat fini, pas de te diriger : prends toi-même les petites décisions, et note tes choix dans le bilan. Ne demande une précision que si tu ne peux vraiment pas avancer sans elle.
+- Vérifie toujours ton travail avant de terminer : lance les tests ou la compilation avec run_command, exécute le script, relis le fichier créé. Corrige ce qui échoue et recommence. Une commande n'est terminée que si tu as constaté que le résultat fonctionne.
+- Une commande que tu lances doit se terminer d'elle-même : n'ouvre ni terminal, ni éditeur, ni programme interactif, et ne laisse pas tourner un serveur sans fin (pour l'essayer, lance-le en arrière-plan avec une limite de temps, puis arrête-le). Le suivi de ton travail s'affiche seul : tu n'as rien à ouvrir pour le membre.
+- Si une commande échoue, lis l'erreur et change d'approche plutôt que de relancer la même.
 - Les documents se rédigent en Markdown, sauf demande contraire.
 - N'utilise pas git (ni branche, ni commit, ni push) : quand le projet a un dépôt GitHub, <br/> prépare la branche de la commande avant toi et enregistre ton travail après « finish ».
 - Évite les commandes destructrices ou globales (suppressions en masse, installations globales).
@@ -152,6 +156,8 @@ export class Kitchen implements KitchenHooks {
       relay: RelayRequest;
       /** Connexion de la machine qui travaille : une machine cloud ne prend qu'une commande à la fois. */
       connectionId: string;
+      /** Suites demandées pendant le travail : le cuisinier les lit au tour suivant. */
+      followUps: string[];
     }
   >();
   readonly #calls = new Map<string, PendingCall>();
@@ -251,6 +257,38 @@ export class Kitchen implements KitchenHooks {
       await this.#publish(orderId, teamId);
     }
     return true;
+  }
+
+  /**
+   * Une suite à une commande : elle continue au lieu d'en créer une nouvelle. En cours, le cuisinier
+   * la prend en compte au tour suivant ; terminée, la commande repart de ce qui est déjà fait, sur
+   * la même branche. Une commande déjà fusionnée ne repart pas : renvoie `null`.
+   */
+  async followUp(orderId: string, teamId: string, text: string, userId: string): Promise<Order | null> {
+    const [row] = await this.#ctx.db.select().from(orders).where(eq(orders.id, orderId));
+    if (!row || row.mergedAt) return null;
+    const brief = `${row.brief}\n\nSuite demandée : ${text}`.slice(0, 12_000);
+    const active = [...this.#active.values()].find((entry) => entry.orderId === orderId);
+    if (active) {
+      active.followUps.push(text);
+      await this.#ctx.db.update(orders).set({ brief, updatedAt: new Date() }).where(eq(orders.id, orderId));
+    } else {
+      await this.#ctx.db
+        .update(orders)
+        .set({
+          brief,
+          status: "pending",
+          followUp: row.followUp ? `${row.followUp}\n${text}` : text,
+          requestedByUserId: userId,
+          relayFromSessionId: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(orders.id, orderId));
+    }
+    await this.#step(orderId, "info", `Suite demandée : ${text.slice(0, 200)}`);
+    const order = await this.#publish(orderId, teamId);
+    if (!active) void this.schedule();
+    return order;
   }
 
   /**
@@ -363,7 +401,8 @@ export class Kitchen implements KitchenHooks {
   #start(order: OrderRow, teamId: string, machine: LiveConnection): void {
     const controller = new AbortController();
     const relay: RelayRequest = { requested: false, nudges: 0 };
-    const done = this.#run(order, teamId, machine, controller.signal, relay)
+    const followUps: string[] = [];
+    const done = this.#run(order, teamId, machine, controller.signal, relay, followUps)
       .catch((error: unknown) =>
         this.#ctx.log.error({ err: error, orderId: order.id }, "commande interrompue"),
       )
@@ -388,6 +427,7 @@ export class Kitchen implements KitchenHooks {
       done,
       relay,
       connectionId: machine.connectionId,
+      followUps,
     });
   }
 
@@ -397,6 +437,7 @@ export class Kitchen implements KitchenHooks {
     machine: LiveConnection,
     signal: AbortSignal,
     relay: RelayRequest,
+    followUps: string[],
   ): Promise<void> {
     const [owner] = await this.#ctx.db
       .select({ displayName: users.displayName })
@@ -422,7 +463,7 @@ export class Kitchen implements KitchenHooks {
       projectId: order.projectId,
       teamId,
       kind: "cuisinier",
-      body: `Je commence la **commande n° ${order.number}** (${order.title}) sur ${where}.`,
+      body: `${order.followUp ? "Je reprends" : "Je commence"} la **commande n° ${order.number}** (${order.title}) sur ${where}.`,
       ...(order.sourceMessageId && { replyToId: order.sourceMessageId }),
     });
 
@@ -470,7 +511,8 @@ export class Kitchen implements KitchenHooks {
       },
     ];
 
-    const changed = new Set<string>();
+    const changed = new Set<string>(order.changedFiles);
+    const check = new WorkCheck();
     let nudges = 0;
     try {
       if (cloud && !(await this.#prepareCloud(machine, order, teamId, signal))) return;
@@ -478,6 +520,12 @@ export class Kitchen implements KitchenHooks {
       if (branch === false) return;
       for (let turn = 1; turn <= MAX_TURNS; turn++) {
         if (signal.aborted) throw new StoppedError();
+        for (const text of followUps.splice(0)) {
+          messages.push({
+            role: "user",
+            content: `Le membre demande en plus, pour cette même commande : ${text}\nPrends-le en compte, puis termine comme prévu.`,
+          });
+        }
         if (cloud && Date.now() - startedAt > CLOUD_MAX_MS) {
           return await this.#finish(
             order,
@@ -545,6 +593,18 @@ export class Kitchen implements KitchenHooks {
           if (name === "finish") {
             const parsed = finishInput.safeParse(args);
             if (parsed.success) {
+              // Une suite vient d'arriver : la commande ne se termine pas sans elle.
+              if (followUps.length > 0) {
+                messages.push(
+                  toolMessage(call.id, name, "Pas encore : le membre vient de demander une suite."),
+                );
+                continue;
+              }
+              const missing = parsed.data.success ? check.beforeFinish() : null;
+              if (missing) {
+                messages.push(toolMessage(call.id, name, missing));
+                continue;
+              }
               const saved =
                 parsed.data.success && branch
                   ? await this.#saveBranch(machine, order, branch, parsed.data.summary, signal)
@@ -555,7 +615,7 @@ export class Kitchen implements KitchenHooks {
                 order,
                 teamId,
                 parsed.data.success,
-                `${parsed.data.summary}${saved}`,
+                `${parsed.data.summary}${parsed.data.success ? check.note() : ""}${saved}`,
                 changed,
                 files,
               );
@@ -604,8 +664,30 @@ export class Kitchen implements KitchenHooks {
             continue;
           }
 
+          // La même commande a déjà échoué plusieurs fois : pas la peine de la relancer.
+          if (
+            name === "run_command" &&
+            "command" in input.data &&
+            check.exhausted(String(input.data.command))
+          ) {
+            messages.push(
+              toolMessage(
+                call.id,
+                name,
+                "Cette commande a déjà échoué plusieurs fois : ne la relance pas. Lis l'erreur et change d'approche, ou termine en disant ce qui bloque.",
+              ),
+            );
+            continue;
+          }
           const result = await this.#callTool(machine, order, name, input.data, signal);
           const path = "path" in input.data ? String(input.data.path) : undefined;
+          if (name === "run_command" && "command" in input.data) {
+            check.command(String(input.data.command), result.ok);
+          } else if (name === "read_file" && path && result.ok) {
+            check.read(path);
+          } else if ((name === "write_file" || name === "edit_file") && path && result.ok) {
+            check.wrote(path);
+          }
           if (name === "write_file" || name === "edit_file") {
             if (result.ok && path) changed.add(path);
             await this.#step(order.id, "write", `${result.ok ? "Modifié" : "Non modifié"} : ${path}`);
@@ -937,7 +1019,7 @@ export class Kitchen implements KitchenHooks {
   async #end(order: OrderRow, teamId: string, status: OrderStatus, summary: string, changed: Set<string>) {
     await this.#ctx.db
       .update(orders)
-      .set({ status, summary, changedFiles: [...changed], updatedAt: new Date() })
+      .set({ status, summary, changedFiles: [...changed], followUp: null, updatedAt: new Date() })
       .where(eq(orders.id, order.id));
     await this.#step(order.id, status === "done" ? "info" : "error", summaryLine(status));
     await this.#publish(order.id, teamId);
@@ -1039,6 +1121,16 @@ function handoffNote(input: z.infer<typeof handoffInput>): string {
 
 /** Ce que le cuisinier doit savoir quand il reprend une commande déjà commencée ailleurs. */
 function resumeLines(order: OrderRow): string[] {
+  if (order.followUp) {
+    return [
+      "",
+      "Cette commande a déjà été réalisée, et le dossier contient ce travail : ne recommence pas tout.",
+      ...(order.summary ? ["Bilan de ce qui est fait :", order.summary] : []),
+      "",
+      "Ce que le membre demande maintenant, à réaliser en priorité :",
+      order.followUp,
+    ];
+  }
   if (order.handoffNote) {
     return [
       "",

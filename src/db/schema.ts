@@ -293,6 +293,8 @@ export const orders = pgTable(
     /** Note de reprise, et machine quittée : le relais ne doit pas y revenir. */
     handoffNote: text(),
     relayFromSessionId: uuid().references(() => sessions.id, { onDelete: "set null" }),
+    /** Suite demandée, pas encore réalisée : la commande repart de ce qui est déjà fait. */
+    followUp: text(),
     /** « cloud » : sur la machine cloud de <br/>, pour une commande jugée non sensible. */
     runOn: text().$type<"member" | "cloud">().notNull().default("member"),
     steps: jsonb().$type<OrderStepRow[]>().notNull().default([]),

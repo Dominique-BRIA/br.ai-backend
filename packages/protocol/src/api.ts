@@ -280,6 +280,10 @@ export const createOrderBody = z.object({
 });
 export type CreateOrderBody = z.input<typeof createOrderBody>;
 
+/** POST /orders/:orderId/follow-up — une suite à une commande, sans en créer une nouvelle. */
+export const orderFollowUpBody = z.object({ brief: z.string().trim().min(1).max(6000) });
+export type OrderFollowUpBody = z.input<typeof orderFollowUpBody>;
+
 /** POST /orders/:orderId/stop — réservé au demandeur et au chef. */
 export const orderResponse = z.object({ order });
 export type OrderResponse = z.infer<typeof orderResponse>;

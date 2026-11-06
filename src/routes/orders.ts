@@ -3,6 +3,7 @@ import {
   type Order,
   type OrdersResponse,
   type OrderValidateResponse,
+  orderFollowUpBody,
   orderPullRequestBody,
 } from "@br-ia/protocol";
 
@@ -87,6 +88,45 @@ export function orderRoutes(
       sourceMessageId: announcement.id,
       memoryItemId: null,
       runOn,
+    });
+    return { order };
+  });
+
+  /** Une suite à une commande de l'équipe : elle continue, au lieu d'en créer une nouvelle. */
+  app.post("/orders/:orderId/follow-up", async (request): Promise<{ order: Order }> => {
+    const { orderId } = parse(orderParams, request.params);
+    const { brief } = parse(orderFollowUpBody, request.body);
+    if (!kitchen) throw new HttpError(404, "not_found", "Le cuisinier n'est pas activé sur ce serveur.");
+    const [row] = await ctx.db
+      .select({ order: orders, teamId: projects.teamId })
+      .from(orders)
+      .innerJoin(projects, eq(projects.id, orders.projectId))
+      .where(eq(orders.id, orderId));
+    if (!row || !(await roleIn(ctx, request.userId, row.teamId))) throw notFound("Commande introuvable.");
+    if (await quotaReached(ctx, row.teamId)) {
+      throw new HttpError(
+        402,
+        "credits_insufficient",
+        "Crédit insuffisant : le chef peut saisir un code d'invitation dans la page de l'équipe.",
+      );
+    }
+    const order = await kitchen.followUp(orderId, row.teamId, brief, request.userId);
+    if (!order) {
+      throw new HttpError(
+        409,
+        "order_not_ready",
+        "Cette commande est déjà fusionnée : passez-en une nouvelle.",
+      );
+    }
+    const [author] = await ctx.db
+      .select({ displayName: users.displayName })
+      .from(users)
+      .where(eq(users.id, request.userId));
+    await postAgentMessage(ctx, {
+      projectId: row.order.projectId,
+      teamId: row.teamId,
+      kind: "serveur",
+      body: `${author?.displayName ?? "Un membre"} a demandé une suite à la **commande n° ${row.order.number}**.`,
     });
     return { order };
   });

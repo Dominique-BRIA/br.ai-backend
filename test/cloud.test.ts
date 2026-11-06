@@ -110,6 +110,7 @@ describe("machine cloud", () => {
 
     ai.turns.push(
       { calls: [{ name: "write_file", input: { path: "fiche.md", content: "# Fiche" } }] },
+      { calls: [{ name: "read_file", input: { path: "fiche.md" } }] },
       { calls: [{ name: "finish", input: { success: true, summary: "La fiche est prête." } }] },
     );
     const placed = await order("cloud");
@@ -125,11 +126,12 @@ describe("machine cloud", () => {
     expect(tools.map((call) => call.tool)).toEqual([
       "cloud_prepare",
       "write_file",
+      "read_file",
       "cloud_collect",
       "cloud_cleanup",
     ]);
     expect(tools[0]?.input).toEqual({ space: projectId, repo: null });
-    expect(tools[2]?.input).toEqual({ name: "commande-1-fiche-de-revision.zip" });
+    expect(tools[3]?.input).toEqual({ name: "commande-1-fiche-de-revision.zip" });
     // Pas de coffre de secrets sur la machine cloud, ni de consignes sur un propriétaire.
     const request = ai.toolRequests.at(-1);
     expect(request?.tools.map((tool) => tool.function.name)).not.toContain("write_env");
