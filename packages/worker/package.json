@@ -1,0 +1,21 @@
+{
+  "name": "@br-ia/worker",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Machine cloud du cuisinier de <br/> : exécute les outils demandés par le serveur, sans éditeur.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "node src/main.ts"
+  },
+  "dependencies": {
+    "@br-ia/protocol": "*",
+    "ws": "^8.22.1",
+    "zod": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

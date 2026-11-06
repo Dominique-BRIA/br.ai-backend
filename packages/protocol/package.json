@@ -4,7 +4,8 @@
   "description": "Protocole partagé entre le serveur, l'extension et le site <br/>",
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./safety": "./src/safety.ts"
   },
   "peerDependencies": {
     "zod": "^4.0.0"
