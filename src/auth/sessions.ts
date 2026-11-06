@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { AppContext } from "../context.ts";
 import { sessions, users } from "../db/schema.ts";
 import { HttpError } from "../http/errors.ts";
+import { CLOUD_USER_ID } from "../services/cloud.ts";
 import { blockedByMaintenance } from "../services/maintenance.ts";
 import { newSessionToken, sha256 } from "./secrets.ts";
 
@@ -71,6 +72,9 @@ export function requireAuth(app: FastifyInstance, ctx: AppContext): void {
       throw new HttpError(503, "maintenance", "<br/> est en maintenance. Réessayez plus tard.");
     }
     request.userId = session.userId;
+    if (session.userId === CLOUD_USER_ID) {
+      throw new HttpError(403, "forbidden", "Ce jeton ne sert qu'à la connexion de la machine cloud.");
+    }
     request.sessionId = session.id;
   });
 }

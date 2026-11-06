@@ -1,5 +1,5 @@
 import { scheduleMaintenanceBody } from "@br-ia/protocol";
-import { and, count, desc, eq, gte, ilike, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, ilike, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { ModelChoice } from "../ai/client.ts";
@@ -17,6 +17,7 @@ import {
   users,
 } from "../db/schema.ts";
 import { HttpError, parse } from "../http/errors.ts";
+import { CLOUD_USER_ID } from "../services/cloud.ts";
 import { creditRates, currentMonth, saveCreditRates, teamUsage } from "../services/credits.ts";
 import {
   getMaintenance,
@@ -41,8 +42,10 @@ export function dashboardRoutes(
   const since = (days: number) => new Date(Date.now() - days * 86_400_000);
 
   app.get("/admin/overview", async () => {
-    const total = async (table: typeof users | typeof teams | typeof projects) =>
+    const total = async (table: typeof teams | typeof projects) =>
       (await ctx.db.select({ total: count() }).from(table))[0]?.total ?? 0;
+    // Le compte de service de la machine cloud n'est pas un utilisateur.
+    const [people] = await ctx.db.select({ total: count() }).from(users).where(ne(users.id, CLOUD_USER_ID));
     const orderCounts = await ctx.db
       .select({ status: orders.status, total: count() })
       .from(orders)
@@ -66,7 +69,7 @@ export function dashboardRoutes(
       .from(feedback)
       .where(eq(feedback.status, "new"));
     return {
-      users: await total(users),
+      users: people?.total ?? 0,
       teams: await total(teams),
       projects: await total(projects),
       machinesOnline: ctx.hub.machineCount,
@@ -146,7 +149,10 @@ export function dashboardRoutes(
       })
       .from(users)
       .where(
-        search ? or(ilike(users.email, `%${search}%`), ilike(users.displayName, `%${search}%`)) : undefined,
+        and(
+          ne(users.id, CLOUD_USER_ID),
+          search ? or(ilike(users.email, `%${search}%`), ilike(users.displayName, `%${search}%`)) : undefined,
+        ),
       )
       .orderBy(desc(users.createdAt))
       .limit(200);

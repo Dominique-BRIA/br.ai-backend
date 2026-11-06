@@ -1,10 +1,11 @@
-import { and, count, countDistinct, desc, eq, inArray, type SQL, sql, sum } from "drizzle-orm";
+import { and, count, countDistinct, desc, eq, inArray, ne, type SQL, sql, sum } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type { AppContext } from "../context.ts";
 import { adminAudit, aiCalls, messages, orders, projects, teams, users } from "../db/schema.ts";
 import { parse } from "../http/errors.ts";
+import { CLOUD_USER_ID } from "../services/cloud.ts";
 
 const statisticsQuery = z.object({
   days: z.coerce
@@ -72,7 +73,10 @@ export function insightRoutes(app: FastifyInstance, ctx: AppContext): void {
 
     // Les totaux de la période et de la précédente, pour les tendances.
     const totals = async (range: (column: PgColumn) => SQL) => {
-      const [newUsers] = await ctx.db.select({ value: count() }).from(users).where(range(users.createdAt));
+      const [newUsers] = await ctx.db
+        .select({ value: count() })
+        .from(users)
+        .where(and(range(users.createdAt), ne(users.id, CLOUD_USER_ID)));
       const [messageRow] = await ctx.db
         .select({
           value: count(),
@@ -103,7 +107,7 @@ export function insightRoutes(app: FastifyInstance, ctx: AppContext): void {
     const usersByDay = await ctx.db
       .select({ day: day(users.createdAt), value: count() })
       .from(users)
-      .where(inPeriod(users.createdAt))
+      .where(and(inPeriod(users.createdAt), ne(users.id, CLOUD_USER_ID)))
       .groupBy(byPosition(1));
     const ordersByDay = await ctx.db
       .select({ day: day(orders.createdAt), value: count() })

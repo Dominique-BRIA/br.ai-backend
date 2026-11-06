@@ -71,6 +71,8 @@ describe("machine cloud", () => {
       { admin: true },
     );
     expect(listed.json.machines).toMatchObject([{ label: "gcp-e2-micro", online: true }]);
+    // Son jeton ne sert qu'à la connexion temps réel, pas aux routes des membres.
+    expect((await t.call("GET", "/workspace", { token: created.json.token })).status).toBe(403);
 
     const tools: { tool: string; input: Record<string, unknown> }[] = [];
     let running = true;
