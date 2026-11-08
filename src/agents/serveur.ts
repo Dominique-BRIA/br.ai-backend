@@ -70,6 +70,22 @@ const KEEP_PROMISE = `Ta réponse annonce un travail, mais "order" est vide : le
 const ORDER_NOT_SENT =
   "Je n'ai pas réussi à transmettre cette demande au cuisinier. Dans l'onglet Commandes, utilisez « Demander une suite » sur la commande concernée, ou passez une nouvelle commande.";
 
+const CONTINUES_PROMPT = `Tu décides si la demande d'un membre prolonge une commande récente de son projet.
+Elle la prolonge si elle modifie, corrige ou complète ce que cette commande a produit, même sans la nommer : « ajoute une phrase à la fin de la présentation » prolonge la commande qui a créé la présentation.
+Elle ne la prolonge pas s'il s'agit d'un travail sans lien avec les commandes listées.
+Renvoie uniquement un objet JSON : {"continues": numéro de la commande, ou null}.`;
+const continuesOutput = z.object({ continues: z.number().int().positive().nullable() });
+
+function parseContinues(content: string): z.infer<typeof continuesOutput> | null {
+  try {
+    const json = content.slice(content.indexOf("{"), content.lastIndexOf("}") + 1);
+    const result = continuesOutput.safeParse(JSON.parse(json));
+    return result.success ? result.data : null;
+  } catch {
+    return null;
+  }
+}
+
 /** La réponse annonce un travail sans commande derrière : sans correction, il ne se passerait rien. */
 function promisesWork(result: ServeurOutput): boolean {
   if (result.order || !result.reply) return false;
@@ -311,6 +327,21 @@ export class ServeurAgent {
       });
     }
 
+    const blocked = Boolean(result.order && this.kitchen) && (await quotaReached(this.ctx, teamId));
+    const followed =
+      result.order && this.kitchen && !blocked
+        ? await this.#continuedOrder(result.order, message, recentOrders, teamId, author.userId)
+        : undefined;
+    // Une commande ne part jamais en silence.
+    if (result.order && this.kitchen && !blocked && !result.reply) {
+      result = {
+        ...result,
+        reply: followed
+          ? `Je transmets au cuisinier la suite de la **commande n° ${followed.number}**.`
+          : `Je transmets au cuisinier : **${result.order.title}**.`,
+      };
+    }
+
     if (result.reply) {
       await postAgentMessage(this.ctx, {
         projectId: message.projectId,
@@ -322,7 +353,7 @@ export class ServeurAgent {
     }
 
     // La commande part en cuisine après la réponse du serveur, pour que le fil se lise dans l'ordre.
-    if (result.order && this.kitchen && (await quotaReached(this.ctx, teamId))) {
+    if (blocked) {
       await postAgentMessage(this.ctx, {
         projectId: message.projectId,
         teamId,
@@ -332,9 +363,6 @@ export class ServeurAgent {
       });
     } else if (result.order && this.kitchen) {
       // Une suite continue la commande au lieu d'en créer une nouvelle.
-      const followed = result.order.continues
-        ? recentOrders.find((order) => order.number === result?.order?.continues && !order.merged)
-        : undefined;
       const continued =
         followed && (await this.kitchen.followUp(followed.id, teamId, result.order.brief, author.userId));
       if (!continued)
@@ -348,6 +376,50 @@ export class ServeurAgent {
           sourceMessageId: message.id,
           memoryItemId: taskId,
         });
+    }
+  }
+
+  /**
+   * La commande que cette demande prolonge. L'IA l'indique rarement d'elle-même : sans indication,
+   * une question à part lui est posée sur ce seul point. Sans réponse, c'est une nouvelle commande.
+   */
+  async #continuedOrder(
+    order: NonNullable<ServeurOutput["order"]>,
+    message: Message,
+    recentOrders: Order[],
+    teamId: string,
+    userId: string,
+  ): Promise<Order | undefined> {
+    const open = recentOrders.filter((candidate) => !candidate.merged);
+    if (order.continues) return open.find((candidate) => candidate.number === order.continues);
+    if (open.length === 0) return undefined;
+    const context = [
+      "Commandes récentes du projet :",
+      ...open.map(
+        (candidate) =>
+          `- n° ${candidate.number} « ${candidate.title} » : ${(candidate.summary ?? candidate.brief).slice(0, 300)}`,
+      ),
+      "",
+      `Demande du membre : ${message.body}`,
+    ].join("\n");
+    try {
+      const completion = await this.ai.complete(this.chain, {
+        purpose: "serveur",
+        teamId,
+        userId,
+        projectId: message.projectId,
+        json: true,
+        messages: [
+          { role: "system", content: CONTINUES_PROMPT },
+          { role: "user", content: context },
+        ],
+        accept: (answer) => parseContinues(answer) !== null,
+      });
+      const number = parseContinues(completion.content)?.continues;
+      return open.find((candidate) => candidate.number === number);
+    } catch (error) {
+      if (!(error instanceof AiUnavailableError)) throw error;
+      return undefined;
     }
   }
 

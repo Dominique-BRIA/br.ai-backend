@@ -276,6 +276,42 @@ describe("suite d'une commande", () => {
     expect(await orders()).toHaveLength(count);
   });
 
+  it("retrouve seul la commande à continuer, et l'annonce même si l'IA ne dit rien", async () => {
+    const order = await place("Présentation finale");
+    ai.turns.push(finish("Présentation faite."));
+    const box = await machine(() => ({ ok: true, output: "ok" }));
+    await waitFor(finished(order.id));
+    const count = (await orders()).length;
+
+    // L'IA passe une « nouvelle » commande, sans répondre et sans indiquer de suite.
+    ai.replies.push(
+      {
+        category: "request",
+        reply: null,
+        memory: [],
+        order: { title: "Ajouter une mention", brief: "Ajouter une phrase à la fin." },
+      },
+      { continues: order.number },
+    );
+    ai.turns.push(finish("Phrase ajoutée."));
+    await t.call("POST", `/projects/${projectId}/messages`, {
+      token: ali.token,
+      body: { body: "Ajoute une phrase à la fin de la présentation" },
+    });
+    await t.serveur?.idle();
+    await waitFor(async () => (await statusOf(order.id))?.summary === "Phrase ajoutée.");
+    await box.close();
+    expect(await orders()).toHaveLength(count);
+    const { messages } = (
+      await t.call<{ messages: Message[] }>("GET", `/projects/${projectId}/messages?limit=100`, {
+        token: ali.token,
+      })
+    ).json;
+    expect(
+      messages.some((message) => message.body.includes(`la suite de la **commande n° ${order.number}**`)),
+    ).toBe(true);
+  });
+
   it("dit franchement qu'il n'a rien transmis si l'IA persiste à promettre", async () => {
     const before = (await orders()).length;
     ai.replies.push(
