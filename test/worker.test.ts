@@ -155,6 +155,26 @@ describe("espace réservé du projet", () => {
 });
 
 describe("fichier .zip", () => {
+  it("n'envoie ni ne garde le dossier de travail du cuisinier", async () => {
+    const { tools, delivered, spacesRoot } = setup();
+    await prepare(tools);
+    await tools.handle(ORDER, "write_file", { path: ".travail/creer.py", content: "print(1)" });
+    await tools.handle(ORDER, "write_file", { path: "rapport.md", content: "# R" });
+    const answer = JSON.parse((await tools.handle(ORDER, "cloud_collect", { name: "a.zip" })).output);
+    expect(answer).toMatchObject({ files: 1, names: ["rapport.md"] });
+    expect(Object.keys(contents(delivered[0]?.bytes))).toEqual(["rapport.md"]);
+    await tools.handle(ORDER, "cloud_cleanup", {});
+    expect(readdirSync(join(spacesRoot, PROJECT))).toEqual(["rapport.md"]);
+  });
+
+  it("garde le refus des suppressions forcées", async () => {
+    const { tools } = setup();
+    await prepare(tools);
+    const answer = await tools.handle(ORDER, "run_command", { command: "rm -f a.txt", timeout_seconds: 10 });
+    expect(answer.ok).toBe(false);
+    expect(answer.output).toContain("suppression de fichiers");
+  });
+
   it("contient l'espace du projet, sans les dossiers techniques", async () => {
     const { tools, delivered } = setup();
     await prepare(tools);
@@ -253,11 +273,13 @@ describe("sécurité de la machine cloud", () => {
       output: "Branche bria/1-page créée depuis main.",
     });
     await tools.handle(ORDER, "write_file", { path: "page.html", content: "<p></p>\n" });
+    await tools.handle(ORDER, "write_file", { path: ".travail/brouillon.py", content: "print(1)" });
     const saved = JSON.parse(
       (await tools.handle(ORDER, "git_save", { branch: "bria/1-page", message: "Page\n\nCommande n° 1." }))
         .output,
     );
     expect(saved.pushed).toBe(true);
+    expect(inRemote(remote, "ls-tree", "-r", "--name-only", "bria/1-page")).not.toContain(".travail");
 
     const log = inRemote(remote, "log", "-1", "--format=%an <%ae>%n%B", "bria/1-page");
     expect(log).toContain("Ali Membre <abc@users.noreply.br.garah.me>");
@@ -378,6 +400,7 @@ describe("travailleur relié au serveur", () => {
     });
     expect((await waitDone(placed.json.order.id)).status).toBe("done");
 
+    expect((await lastMessage())?.body).toContain("**Dans le fichier .zip** : `fiche.md`.");
     const file = (await lastMessage())?.attachments[0];
     expect(file).toMatchObject({ name: "commande-1-fiche-de-revision.zip", contentType: "application/zip" });
     const download = await t.app.inject({

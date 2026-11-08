@@ -1,5 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import {
+  appendFile,
   chmod,
   lstat,
   mkdir,
@@ -25,7 +26,17 @@ const MAX_ZIP_INPUT_BYTES = 150 * 1024 * 1024;
 const SPACE_WARNING_BYTES = 200 * 1024 * 1024;
 const SPACE_LIMIT_BYTES = 500 * 1024 * 1024;
 /** Effacés entre deux commandes : une installation les recrée, et ils prendraient toute la place. */
-const DISPOSABLE_DIRECTORIES = ["node_modules", ".venv", "venv", "__pycache__", ".next", ".turbo"];
+const WORK_DIRECTORY = ".travail";
+const DISPOSABLE_DIRECTORIES = [
+  WORK_DIRECTORY,
+  "node_modules",
+  ".venv",
+  "venv",
+  "__pycache__",
+  ".next",
+  ".turbo",
+];
+const MAX_LISTED_FILES = 200;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export interface Outcome {
@@ -403,6 +414,8 @@ export class CloudTools {
     await chmod(join(dir, ".git"), 0o700);
     await this.#git(dir, ["config", "user.name", repo.author.name]);
     await this.#git(dir, ["config", "user.email", repo.author.email]);
+    // Le dossier de travail du cuisinier n'entre jamais dans un commit.
+    await appendFile(join(dir, ".git", "info", "exclude"), `\n${WORK_DIRECTORY}/\n`);
     return { ok: true, output: `Dépôt ${repo.fullName} cloné sur la machine cloud.` };
   }
 
@@ -418,7 +431,10 @@ export class CloudTools {
       for (const entry of entries) {
         const full = join(folder, entry.name);
         if (entry.isDirectory()) {
-          if (!IGNORED_DIRECTORIES.has(entry.name)) await walk(full);
+          // Ni les dossiers techniques, ni le dossier de travail du cuisinier.
+          if (!IGNORED_DIRECTORIES.has(entry.name) && !DISPOSABLE_DIRECTORIES.includes(entry.name)) {
+            await walk(full);
+          }
           continue;
         }
         // Les liens symboliques ne sont pas rendus : ils pourraient viser n'importe quel fichier.
@@ -435,7 +451,12 @@ export class CloudTools {
     await walk(root);
     const answer = (attachmentId: string | null, note: string): Outcome => ({
       ok: true,
-      output: JSON.stringify({ attachmentId, files: count, note }),
+      output: JSON.stringify({
+        attachmentId,
+        files: count,
+        names: Object.keys(files).sort().slice(0, MAX_LISTED_FILES),
+        note,
+      }),
     });
     if (count === 0) return answer(null, "Aucun fichier à envoyer dans l'espace du projet.");
     const zip = zipSync(files);

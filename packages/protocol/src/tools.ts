@@ -142,6 +142,8 @@ export function isCloudTool(name: string): name is CloudToolName {
 export const cloudCollectResult = z.object({
   attachmentId: z.uuid().nullable(),
   files: z.number().int().nonnegative(),
+  /** Chemins des fichiers du .zip : le bilan donné à l'équipe s'appuie sur cette liste. */
+  names: z.array(z.string()).max(200).default([]),
   note: z.string(),
 });
 export type CloudCollectResult = z.infer<typeof cloudCollectResult>;

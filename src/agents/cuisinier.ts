@@ -39,9 +39,18 @@ const WAITING_TEXT =
 const CLOUD_WAITING_TEXT =
   "En attente de la machine cloud de <br/> : elle termine une autre commande, ou elle est hors ligne pour l'instant.";
 /** Ce que la machine cloud dit d'elle-même au cuisinier, à la place du propriétaire et de ses dossiers. */
+/** Ce qu'une commande cloud rend à l'équipe. */
+interface Delivered {
+  files: string[];
+  contents: string;
+}
+const NOTHING_DELIVERED: Delivered = { files: [], contents: "" };
+
 const CLOUD_MACHINE_LINES = [
   "Machine : la machine cloud de <br/>, sous Linux (1 Go de mémoire), commandes exécutées par sh. Il n'y a ni secrets ni fichier .env, et rien n'est accessible hors de ce dossier.",
   "Le dossier est l'espace réservé du projet : ce qui s'y trouve vient des commandes précédentes et reste pour les suivantes. Regarde d'abord ce qu'il contient avec list_dir. À la fin, tout son contenu est envoyé à l'équipe dans un fichier .zip à télécharger.",
+  "L'équipe reçoit tout ce qui est dans ce dossier, sauf le sous-dossier .travail/ : mets-y tes scripts, brouillons et fichiers intermédiaires, il est effacé à la fin. Hors de .travail/, ne laisse que ce que l'équipe doit recevoir. Pour retirer un fichier devenu inutile, utilise rm suivi de son nom, sans option.",
+  "Ne crée jamais d'archive (.zip, .tar.gz) : <br/> prépare le fichier .zip lui-même à la fin, sauf si le membre demande explicitement une archive à l'intérieur. La liste réelle du contenu du .zip est ajoutée à ton bilan : ne l'écris pas toi-même.",
   "Pour les documents, Python 3 est prêt avec python-pptx (présentations), python-docx (Word), openpyxl (Excel), reportlab (PDF) et matplotlib (graphiques), ainsi que pandoc. Écris un script, lance-le avec run_command, puis vérifie que le fichier existe.",
   "Les membres ne sont pas forcément développeurs : écris ton bilan en langage simple, sans parler de scripts ni de commandes, et dis quels fichiers ils trouveront dans le .zip. Ne laisse pas de fichiers de travail inutiles dans l'espace.",
 ];
@@ -609,15 +618,17 @@ export class Kitchen implements KitchenHooks {
                 parsed.data.success && branch
                   ? await this.#saveBranch(machine, order, branch, parsed.data.summary, signal)
                   : "";
-              const files =
-                parsed.data.success && cloud ? await this.#collectCloud(machine, order, signal) : [];
+              const delivered =
+                parsed.data.success && cloud
+                  ? await this.#collectCloud(machine, order, signal)
+                  : NOTHING_DELIVERED;
               return await this.#finish(
                 order,
                 teamId,
                 parsed.data.success,
-                `${parsed.data.summary}${parsed.data.success ? check.note() : ""}${saved}`,
+                `${parsed.data.summary}${parsed.data.success ? check.note() : ""}${saved}${delivered.contents}`,
                 changed,
-                files,
+                delivered.files,
               );
             }
             messages.push(toolMessage(call.id, name, "Paramètres invalides pour finish."));
@@ -689,7 +700,7 @@ export class Kitchen implements KitchenHooks {
             check.wrote(path);
           }
           if (name === "write_file" || name === "edit_file") {
-            if (result.ok && path) changed.add(path);
+            if (result.ok && path && !path.startsWith(".travail/")) changed.add(path);
             await this.#step(order.id, "write", `${result.ok ? "Modifié" : "Non modifié"} : ${path}`);
           } else if (name === "run_command" && "command" in input.data) {
             await this.#step(
@@ -941,28 +952,28 @@ export class Kitchen implements KitchenHooks {
   }
 
   /** Le contenu du dossier part en .zip : il devient une pièce jointe du message de fin. */
-  async #collectCloud(machine: LiveConnection, order: OrderRow, signal: AbortSignal): Promise<string[]> {
+  async #collectCloud(machine: LiveConnection, order: OrderRow, signal: AbortSignal): Promise<Delivered> {
     const name = `${orderBranch(order.number, order.title).replace("bria/", "commande-")}.zip`;
     const result = await this.#callTool(machine, order, "cloud_collect", { name }, signal);
     if (!result.ok) {
       await this.#step(order.id, "error", `Fichier .zip non créé : ${result.output}`);
-      return [];
+      return NOTHING_DELIVERED;
     }
     let collected: z.infer<typeof cloudCollectResult>;
     try {
       collected = cloudCollectResult.parse(JSON.parse(result.output));
     } catch {
       await this.#step(order.id, "error", "Réponse illisible de la machine cloud pour le fichier .zip.");
-      return [];
+      return NOTHING_DELIVERED;
     }
     await this.#step(order.id, "info", collected.note);
-    if (!collected.attachmentId) return [];
+    if (!collected.attachmentId) return NOTHING_DELIVERED;
     // La pièce jointe doit bien appartenir à ce projet.
     const [file] = await this.#ctx.db
       .select({ id: attachments.id })
       .from(attachments)
       .where(and(eq(attachments.id, collected.attachmentId), eq(attachments.projectId, order.projectId)));
-    return file ? [file.id] : [];
+    return file ? { files: [file.id], contents: contentsLine(collected) } : NOTHING_DELIVERED;
   }
 
   /** Envoie un outil à la machine et attend son résultat. */
@@ -1159,6 +1170,13 @@ function truncate(output: string): string {
   if (output.length <= MAX_TOOL_OUTPUT) return output;
   const half = MAX_TOOL_OUTPUT / 2;
   return `${output.slice(0, half)}\n\n[… ${output.length - MAX_TOOL_OUTPUT} caractères coupés …]\n\n${output.slice(-half)}`;
+}
+
+/** Ce que le .zip contient réellement, écrit par <br/> et non par l'IA. */
+function contentsLine({ files, names }: z.infer<typeof cloudCollectResult>): string {
+  if (names.length === 0) return "";
+  const more = files > names.length ? ` et ${files - names.length} autre(s)` : "";
+  return `\n\n**Dans le fichier .zip** : ${names.map((name) => `\`${name}\``).join(", ")}${more}.`;
 }
 
 function filesLine(changed: Set<string>): string {
