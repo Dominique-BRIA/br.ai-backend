@@ -401,6 +401,7 @@ describe("travailleur relié au serveur", () => {
     expect((await waitDone(placed.json.order.id)).status).toBe("done");
 
     expect((await lastMessage())?.body).toContain("**Dans le fichier .zip** : `fiche.md`.");
+    expect((await lastMessage())?.body).not.toContain("Fichiers modifiés");
     const file = (await lastMessage())?.attachments[0];
     expect(file).toMatchObject({ name: "commande-1-fiche-de-revision.zip", contentType: "application/zip" });
     const download = await t.app.inject({

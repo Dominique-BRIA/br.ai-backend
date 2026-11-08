@@ -622,6 +622,8 @@ export class Kitchen implements KitchenHooks {
                 parsed.data.success && cloud
                   ? await this.#collectCloud(machine, order, signal)
                   : NOTHING_DELIVERED;
+              // Sans dépôt, la liste du .zip dit ce que l'équipe reçoit : pas d'historique de fichiers.
+              if (!branch && delivered.contents) changed.clear();
               return await this.#finish(
                 order,
                 teamId,
