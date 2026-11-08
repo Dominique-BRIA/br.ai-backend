@@ -6,7 +6,7 @@ const MAX_FAILED_ATTEMPTS = 3;
 /** Rappels avant d'accepter quand même la fin : la commande ne doit pas tourner en rond. */
 const MAX_REMINDERS = 2;
 /** Chaque contrôle visuel consomme du quota : il ne peut pas se répéter sans fin. */
-const MAX_VISUAL_CHECKS = 6;
+const MAX_VISUAL_CHECKS = 4;
 
 /**
  * Ce que le cuisinier a vérifié de son propre travail. Il ne termine pas une commande sans avoir

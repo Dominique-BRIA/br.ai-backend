@@ -39,6 +39,36 @@ describe("choix du modèle", () => {
     expect(turn.skipped).toEqual(["groq/second (500)"]);
   });
 
+  it("patiente sur une limite à la minute au lieu de changer de modèle", async () => {
+    const tried: string[] = [];
+    const fakeFetch = (async (_url: string | URL, init?: RequestInit) => {
+      tried.push((JSON.parse(String(init?.body)) as { model: string }).model);
+      return tried.length === 1
+        ? new Response('{"retryDelay":"1s"}', { status: 429 })
+        : new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }));
+    }) as typeof fetch;
+    const turn = await new AiClient(t.ctx, fakeFetch).toolTurn(chain, request);
+    expect(turn.model).toBe("premier");
+    expect(tried).toEqual(["premier", "premier"]);
+  });
+
+  it("n'attend pas une limite longue, comme un quota du jour", async () => {
+    const tried: string[] = [];
+    const fakeFetch = (async (_url: string | URL, init?: RequestInit) => {
+      const { model } = JSON.parse(String(init?.body)) as { model: string };
+      tried.push(model);
+      return model === "premier"
+        ? new Response('{"retryDelay":"3600s"}', { status: 429 })
+        : new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }] }));
+    }) as typeof fetch;
+    const started = Date.now();
+    const turn = await new AiClient(t.ctx, fakeFetch).toolTurn(chain, request);
+    expect(turn.model).toBe("second");
+    expect(tried).toEqual(["premier", "second"]);
+    expect(turn.skipped).toEqual(["gemini/premier (429)"]);
+    expect(Date.now() - started).toBeLessThan(1_500);
+  });
+
   it("commence par le début de la chaîne sans préférence", async () => {
     const { ai, tried } = client([]);
     await ai.toolTurn(chain, request);

@@ -28,6 +28,9 @@ export interface ToolCall {
 }
 
 /** Morceau d'un message avec images, pour les modèles de vision. */
+const QUICK_RETRY_MS = 2_000;
+const MAX_PATIENCE_MS = 60_000;
+
 export type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 
 export type ChatMessage =
@@ -203,9 +206,16 @@ export class AiClient implements Ai {
           signal: AbortSignal.timeout(TIMEOUT_MS),
         });
         if (response.status === 429 && attempt === 1) {
-          await this.#record(choice, request, started, 0, 0, "HTTP 429 (nouvel essai)");
-          await new Promise((resolve) => setTimeout(resolve, 2_000));
-          continue;
+          const wait = retryWait(
+            await response.clone().text(),
+            response.headers.get("retry-after"),
+            "tools" in body,
+          );
+          if (wait !== null) {
+            await this.#record(choice, request, started, 0, 0, "HTTP 429 (nouvel essai)");
+            await new Promise((resolve) => setTimeout(resolve, wait));
+            continue;
+          }
         }
         if (!response.ok) {
           const text = await response.text();
@@ -285,6 +295,18 @@ const keyOf = (choice: ModelChoice) => `${choice.provider.name}:${choice.model}`
  * les autres fournisseurs les refusent. Mistral exige en plus des identifiants de 9 lettres ou
  * chiffres : les autres sont remplacés par une empreinte, la même pour l'appel et sa réponse.
  */
+/**
+ * Combien attendre avant de réessayer le même modèle après un 429 ; `null` pour passer au suivant.
+ * Le cuisinier travaille sans personne qui attend : il patiente sur une limite à la minute plutôt
+ * que de changer de modèle. Une limite longue (quota du jour) ne s'attend pas.
+ */
+function retryWait(body: string, retryAfter: string | null, patient: boolean): number | null {
+  if (!patient) return QUICK_RETRY_MS;
+  const seconds = Number(/"retryDelay"\s*:\s*"(\d+)/.exec(body)?.[1] ?? retryAfter ?? Number.NaN);
+  if (!Number.isFinite(seconds)) return QUICK_RETRY_MS;
+  return seconds * 1000 <= MAX_PATIENCE_MS ? seconds * 1000 + 500 : null;
+}
+
 /** « fournisseur/modèle (429) », sans le détail du fournisseur. */
 function shortFailure(failure: string): string {
   const [model = "", reason = ""] = failure.split(" : ");

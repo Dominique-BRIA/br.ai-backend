@@ -122,7 +122,7 @@ def scenario():
     assert zone.text == "Fin" and zone.paragraphs[0].runs[0].font.size == Pt(40)
     commande("deplacer-forme", "p.pptx", "3", "2", "--gauche", "120")
     assert "déborde" in commande("inspecter", "p.pptx", "--diapo", "3")
-    commande("deplacer-forme", "p.pptx", "3", "2", "--gauche", "20")
+    commande("deplacer-forme", "p.pptx", "3", "2", "--gauche", "20%")
     commande("supprimer-forme", "p.pptx", "3", "1")
     assert len(Presentation("p.pptx").slides[2].shapes) == 1
 

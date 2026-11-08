@@ -495,6 +495,11 @@ def apercu(arguments):
     print(f"total={len(presentation.slides)}")
 
 
+def pourcent(valeur):
+    """Un pourcentage, écrit avec ou sans le signe %."""
+    return float(valeur.rstrip("%"))
+
+
 def interface():
     analyseur = argparse.ArgumentParser(prog="bria-doc", description="Modifier une présentation .pptx.")
     commandes = analyseur.add_subparsers(dest="commande", required=True)
@@ -508,7 +513,7 @@ def interface():
             sous.add_argument(option, type=genre, required=requise)
         sous.set_defaults(fonction=fonction)
 
-    position = [("--gauche", float, False), ("--haut", float, False)]
+    position = [("--gauche", pourcent, False), ("--haut", pourcent, False)]
     commande("inspecter", inspecter, options=[("--diapo", int, False)])
     commande("remplacer", remplacer, ("ancien", str), ("nouveau", str), options=[("--diapo", int, False)])
     commande("modifier-texte", modifier_texte, ("diapo", int), ("forme", int), ("texte", str))
@@ -527,7 +532,7 @@ def interface():
         deplacer_forme,
         ("diapo", int),
         ("forme", int),
-        options=[*position, ("--largeur", float, False), ("--hauteur", float, False)],
+        options=[*position, ("--largeur", pourcent, False), ("--hauteur", pourcent, False)],
     )
     commande("supprimer-forme", supprimer_forme, ("diapo", int), ("forme", int))
     commande("dupliquer-diapo", dupliquer_diapo, ("diapo", int), options=[("--position", int, False)])

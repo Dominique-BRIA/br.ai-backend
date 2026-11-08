@@ -277,7 +277,7 @@ describe("couche commune d'IA", () => {
   });
 
   it("laisse de côté un modèle au quota épuisé, le temps indiqué par le fournisseur", async () => {
-    const quota = JSON.stringify([{ error: { code: 429, details: [{ retryDelay: "30s" }] } }]);
+    const quota = JSON.stringify([{ error: { code: 429, details: [{ retryDelay: "120s" }] } }]);
     const calledModels: string[] = [];
     const fakeFetch = (async (_url: string, init: RequestInit) => {
       const { model } = JSON.parse(String(init.body));
@@ -291,8 +291,8 @@ describe("couche commune d'IA", () => {
     const turn = { purpose: "essai-pause", messages: [{ role: "user" as const, content: "?" }], tools: [] };
     await client.toolTurn(chain, turn);
     await client.toolTurn(chain, turn);
-    // Deux refus sur « a » (essai et nouvel essai), puis « b » ; au tour suivant, « a » est sauté.
-    expect(calledModels).toEqual(["a", "a", "b", "b"]);
+    // Une limite longue ne s'attend pas : « a » refuse une fois, puis « b » ; au tour suivant, « a » est sauté.
+    expect(calledModels).toEqual(["a", "b", "b"]);
   });
 
   it("ignore les fournisseurs sans clé", () => {
