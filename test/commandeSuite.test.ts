@@ -1,7 +1,9 @@
 import type { Message, Order, Project, Team } from "@br-ia/protocol";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { WorkCheck } from "../src/agents/workCheck.ts";
 import { parseChain } from "../src/ai/client.ts";
+import { orders as ordersTable } from "../src/db/schema.ts";
 import { ScriptedAi } from "./fakeAi.ts";
 import { startApp, type TestApp } from "./helpers.ts";
 
@@ -244,6 +246,84 @@ describe("suite d'une commande", () => {
     await waitFor(async () => (await statusOf(order.id))?.summary === "Contact ajouté.");
     await box.close();
     expect(await orders()).toHaveLength(count);
+  });
+
+  it("ne promet pas un travail sans passer la commande", async () => {
+    const order = await place("Diaporama");
+    ai.turns.push(finish("Diaporama fait."));
+    const box = await machine(() => ({ ok: true, output: "ok" }));
+    await waitFor(finished(order.id));
+    const count = (await orders()).length;
+
+    // L'IA annonce le travail sans remplir la commande : elle est relancée, et la suite part.
+    ai.replies.push(
+      { category: "discussion", reply: "J'ajoute cette mention à la présentation.", memory: [] },
+      {
+        category: "request",
+        reply: "Je transmets au cuisinier.",
+        memory: [],
+        order: { title: "Diaporama", brief: "Ajouter le nom à la fin.", continues: order.number },
+      },
+    );
+    ai.turns.push(finish("Nom ajouté."));
+    await t.call("POST", `/projects/${projectId}/messages`, {
+      token: ali.token,
+      body: { body: "Ajoute le nom à la fin du diaporama" },
+    });
+    await t.serveur?.idle();
+    await waitFor(async () => (await statusOf(order.id))?.summary === "Nom ajouté.");
+    await box.close();
+    expect(await orders()).toHaveLength(count);
+  });
+
+  it("dit franchement qu'il n'a rien transmis si l'IA persiste à promettre", async () => {
+    const before = (await orders()).length;
+    ai.replies.push(
+      { category: "discussion", reply: "J'ajoute cette mention.", memory: [] },
+      { category: "discussion", reply: "J'ajoute cette mention.", memory: [] },
+    );
+    await t.call("POST", `/projects/${projectId}/messages`, {
+      token: ali.token,
+      body: { body: "Ajoute une mention" },
+    });
+    await t.serveur?.idle();
+    const { messages } = (
+      await t.call<{ messages: Message[] }>("GET", `/projects/${projectId}/messages?limit=100`, {
+        token: ali.token,
+      })
+    ).json;
+    expect(messages.at(-1)?.body).toContain("Je n'ai pas réussi à transmettre");
+    expect(await orders()).toHaveLength(before);
+  });
+
+  it("ne relance pas l'IA quand elle répond sans rien annoncer", async () => {
+    const asked = ai.requests.length;
+    ai.replies.push({ category: "discussion", reply: "La réunion est à 15 h.", memory: [] });
+    await t.call("POST", `/projects/${projectId}/messages`, {
+      token: ali.token,
+      body: { body: "@bria c'est à quelle heure la réunion ?" },
+    });
+    await t.serveur?.idle();
+    expect(ai.requests.length).toBe(asked + 1);
+  });
+
+  it("clôt une commande restée en cours, et range au redémarrage", async () => {
+    const stuck = await place("Commande coupée");
+    const old = await place("Commande ancienne");
+    const recent = await place("Commande récente");
+    const set = (id: string, updatedAt: Date) =>
+      t.db.update(ordersTable).set({ status: "running", updatedAt }).where(eq(ordersTable.id, id));
+    await set(stuck.id, new Date());
+    // « Arrêter » fonctionne même si plus aucune machine ne la réalise.
+    const stopped = await t.call<{ order: Order }>("POST", `/orders/${stuck.id}/stop`, { token: ali.token });
+    expect(stopped.json.order.status).toBe("stopped");
+
+    await set(old.id, new Date(Date.now() - 3 * 86_400_000));
+    await set(recent.id, new Date());
+    await t.kitchen?.recoverInterrupted();
+    expect((await statusOf(old.id))?.status).toBe("stopped");
+    expect((await statusOf(recent.id))?.status).toBe("pending");
+    await t.call("POST", `/orders/${recent.id}/stop`, { token: ali.token });
   });
 
   it("refuse la suite d'une commande inconnue ou d'une autre équipe", async () => {

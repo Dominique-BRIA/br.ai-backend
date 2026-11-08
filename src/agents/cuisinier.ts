@@ -39,6 +39,9 @@ const WAITING_TEXT =
 const CLOUD_WAITING_TEXT =
   "En attente de la machine cloud de <br/> : elle termine une autre commande, ou elle est hors ligne pour l'instant.";
 /** Ce que la machine cloud dit d'elle-même au cuisinier, à la place du propriétaire et de ses dossiers. */
+/** Coupée depuis moins longtemps, une commande reprend au redémarrage du serveur. */
+const INTERRUPTED_RESUME_MS = 30 * 60_000;
+
 /** Ce qu'une commande cloud rend à l'équipe. */
 interface Delivered {
   files: string[];
@@ -322,15 +325,53 @@ export class Kitchen implements KitchenHooks {
       await active.done;
       return;
     }
+    // « En cours » sans travail actif ici : elle ne tourne plus nulle part, on peut la clore.
+    const [current] = await this.#ctx.db
+      .select({ status: orders.status })
+      .from(orders)
+      .where(eq(orders.id, orderId));
     const [row] = await this.#ctx.db
       .update(orders)
       .set({ status: "stopped", updatedAt: new Date() })
-      .where(and(eq(orders.id, orderId), eq(orders.status, "pending")))
+      .where(and(eq(orders.id, orderId), inArray(orders.status, ["pending", "running"])))
       .returning();
     if (row) {
-      await this.#step(row.id, "info", "Commande arrêtée avant de commencer.");
+      const text =
+        current?.status === "running"
+          ? "Commande arrêtée : elle ne tournait plus sur aucune machine."
+          : "Commande arrêtée avant de commencer.";
+      await this.#step(row.id, "info", text);
       await this.#publish(row.id);
     }
+  }
+
+  /**
+   * Au démarrage du serveur, rien ne tourne encore : une commande « en cours » a été coupée par un
+   * redémarrage. Récente, elle repart ; ancienne, elle s'arrête au lieu de rester ouverte pour toujours.
+   */
+  async recoverInterrupted(): Promise<void> {
+    const rows = await this.#ctx.db
+      .select({ order: orders, teamId: projects.teamId })
+      .from(orders)
+      .innerJoin(projects, eq(projects.id, orders.projectId))
+      .where(eq(orders.status, "running"));
+    for (const { order, teamId } of rows) {
+      if (this.#active.has(order.projectId)) continue;
+      const recent = Date.now() - order.updatedAt.getTime() < INTERRUPTED_RESUME_MS;
+      await this.#ctx.db
+        .update(orders)
+        .set({ status: recent ? "pending" : "stopped", updatedAt: new Date() })
+        .where(and(eq(orders.id, order.id), eq(orders.status, "running")));
+      await this.#step(
+        order.id,
+        recent ? "info" : "error",
+        recent
+          ? "Le serveur a redémarré : la commande reprend."
+          : "Commande arrêtée : un redémarrage du serveur l'a coupée, et elle n'a pas pu se terminer.",
+      );
+      await this.#publish(order.id, teamId);
+    }
+    await this.schedule();
   }
 
   /** Attend la fin des commandes en cours (tests, arrêt du serveur). */

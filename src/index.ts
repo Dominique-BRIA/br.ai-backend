@@ -45,7 +45,7 @@ const aiKeys = {
 const serveurChain = parseChain(config.AI_SERVEUR_CHAIN, aiKeys);
 const cuisinierChain = parseChain(config.AI_CUISINIER_CHAIN, aiKeys);
 
-const { app } = await buildApp({
+const { app, kitchen } = await buildApp({
   serveurChain,
   cuisinierChain,
   storage: b2 ? new B2Storage(b2) : new DiskStorage(config.FILES_DIR),
@@ -109,4 +109,7 @@ const shutdown = async () => {
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
+await kitchen
+  ?.recoverInterrupted()
+  .catch((error: unknown) => app.log.error({ err: error }, "reprise des commandes impossible"));
 await app.listen({ host: config.HOST, port: config.PORT });

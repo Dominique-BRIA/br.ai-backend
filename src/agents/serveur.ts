@@ -64,6 +64,18 @@ Un membre revient après plusieurs heures d'absence. Résume-lui ce qui s'est pa
 - Cite les auteurs par leur prénom. N'invente rien ; ne recopie pas les messages.
 - Ton de collègue, sans emoji ni point d'exclamation. Pas de titre ni de formule d'introduction.`;
 
+const WORK_PROMISE =
+  /\bj['’]ajoute\b|\bje m['’]en occupe\b|\bje\s+(?:l['’]|la\s+|le\s+|les\s+)?(?:transmets|lance|ajoute|corrige|modifie|crée|génère|passe la commande)\b/i;
+const KEEP_PROMISE = `Ta réponse annonce un travail, mais "order" est vide : le cuisinier ne recevra rien. Renvoie le même objet JSON corrigé : remplis "order" (avec "continues" si cela prolonge une commande récente). Si le travail est impossible sans une précision, garde "order" à null et pose la question ; s'il ne s'agit pas d'un travail, reformule sans rien annoncer.`;
+const ORDER_NOT_SENT =
+  "Je n'ai pas réussi à transmettre cette demande au cuisinier. Dans l'onglet Commandes, utilisez « Demander une suite » sur la commande concernée, ou passez une nouvelle commande.";
+
+/** La réponse annonce un travail sans commande derrière : sans correction, il ne se passerait rien. */
+function promisesWork(result: ServeurOutput): boolean {
+  if (result.order || !result.reply) return false;
+  return result.category === "request" ? !result.reply.includes("?") : WORK_PROMISE.test(result.reply);
+}
+
 /** Lit la réponse JSON de l'IA ; `null` si elle ne respecte pas le format attendu. */
 export function parseServeurOutput(content: string): ServeurOutput | null {
   try {
@@ -85,6 +97,7 @@ Pour chaque nouveau message, classe-le dans une catégorie :
 - "request" : on demande un livrable (code, document, schéma…) que le cuisinier (l'agent qui code sur la machine du demandeur) peut réaliser dans le dossier du projet. Tu l'ajoutes à la mémoire (type "task").
   - Si la demande est assez précise pour être réalisée, passe la commande : remplis "order" avec un titre court et des consignes complètes et autonomes pour le cuisinier (objectif, fichiers ou parties concernés s'ils sont connus, contraintes, critères de réussite, décisions de la mémoire à respecter). Ta réponse indique en une phrase que la commande part en cuisine.
   - Si la demande prolonge, corrige ou complète une commande récente (« ajoute », « corrige », « change », « et aussi »), ce n'est pas une nouvelle commande : mets son numéro dans "continues", et dans "brief" seulement ce qui est demandé en plus. Une nouvelle commande est réservée à un travail sans lien avec les précédentes.
+  - N'annonce jamais un travail (« j'ajoute », « je m'en occupe », « je transmets ») sans remplir "order" : sans cela, le cuisinier ne reçoit rien.
   - N'envoie jamais le membre régler lui-même ce que le cuisinier peut faire, et ne pose une question que si le travail est impossible sans la réponse.
   - Sinon, laisse "order" à null et pose les questions qui manquent, brièvement.
 
@@ -224,19 +237,28 @@ export class ServeurAgent {
 
     let result: ServeurOutput;
     try {
+      const messages = this.#prompt(message, members, history, memory, refs, recentOrders);
       const completion = await this.ai.complete(this.chain, {
         purpose: "serveur",
         teamId,
         userId: author.userId,
         projectId: message.projectId,
         json: true,
-        messages: this.#prompt(message, members, history, memory, refs, recentOrders),
+        messages,
         accept: (content) => {
           const parsed = parseServeurOutput(content);
           return parsed !== null && (!mentioned || Boolean(parsed.reply));
         },
       });
       result = parseServeurOutput(completion.content) as ServeurOutput;
+      if (this.kitchen && promisesWork(result)) {
+        result = await this.#keepPromise(
+          { teamId, userId: author.userId, projectId: message.projectId },
+          messages,
+          completion.content,
+          result,
+        );
+      }
     } catch (error) {
       if (!(error instanceof AiUnavailableError)) throw error;
       this.ctx.log.warn({ messageId: message.id }, error.message);
@@ -326,6 +348,31 @@ export class ServeurAgent {
           sourceMessageId: message.id,
           memoryItemId: taskId,
         });
+    }
+  }
+
+  /** Le serveur a annoncé un travail sans passer de commande : il corrige, ou le dit franchement. */
+  async #keepPromise(
+    origin: { teamId: string; userId: string; projectId: string },
+    messages: ChatMessage[],
+    content: string,
+    result: ServeurOutput,
+  ): Promise<ServeurOutput> {
+    try {
+      const completion = await this.ai.complete(this.chain, {
+        purpose: "serveur",
+        ...origin,
+        json: true,
+        messages: [...messages, { role: "assistant", content }, { role: "user", content: KEEP_PROMISE }],
+        accept: (answer) => {
+          const parsed = parseServeurOutput(answer);
+          return parsed !== null && !promisesWork(parsed);
+        },
+      });
+      return parseServeurOutput(completion.content) as ServeurOutput;
+    } catch (error) {
+      if (!(error instanceof AiUnavailableError)) throw error;
+      return { ...result, reply: ORDER_NOT_SENT };
     }
   }
 
