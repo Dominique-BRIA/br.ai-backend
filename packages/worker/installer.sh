@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installe la machine cloud du cuisinier de <br/> sur une VM Debian 12 (Google Cloud e2-micro).
+# Installe la machine cloud du cuisinier de <br/> sur une VM Debian 12 x64 (Azure B2ats_v2, 1 Go).
 # À lancer en root :  sudo sh installer.sh
 #
 # Deux comptes Linux :
@@ -91,14 +91,20 @@ chown root:root /etc/bria/worker.env
 chmod 0600 /etc/bria/worker.env
 
 echo "== Pare-feu des commandes de l'IA"
-# Ni le serveur de métadonnées de Google (il donne des jetons), ni le réseau interne, ni l'envoi de mails.
+# Ni les services internes de l'hébergeur (métadonnées, jetons), ni le réseau interne, ni l'envoi de mails.
 cat > /usr/local/sbin/bria-pare-feu <<'EOF'
 #!/bin/sh
 RUN_UID=$(id -u bria-run)
 iptables -F BRIA_RUN 2>/dev/null || iptables -N BRIA_RUN
 iptables -C OUTPUT -m owner --uid-owner "$RUN_UID" -j BRIA_RUN 2>/dev/null \
   || iptables -I OUTPUT -m owner --uid-owner "$RUN_UID" -j BRIA_RUN
-for network in 169.254.0.0/16 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.0/8; do
+# Seule exception : les noms de domaine, par le résolveur local de la VM ou celui de l'hébergeur.
+for resolver in 127.0.0.53 168.63.129.16 169.254.169.254; do
+  iptables -A BRIA_RUN -p udp -d "$resolver" --dport 53 -j RETURN
+  iptables -A BRIA_RUN -p tcp -d "$resolver" --dport 53 -j RETURN
+done
+# 168.63.129.16 : l'adresse interne de la plateforme Azure.
+for network in 168.63.129.16/32 169.254.0.0/16 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 127.0.0.0/8; do
   iptables -A BRIA_RUN -d "$network" -j REJECT
 done
 iptables -A BRIA_RUN -p tcp --dport 25 -j REJECT
@@ -118,6 +124,8 @@ Group=bria-run
 EnvironmentFile=/etc/bria/worker.env
 Environment=PATH=/opt/bria-python/bin:/usr/local/bin:/usr/bin:/bin
 WorkingDirectory=/opt/bria/packages/worker
+# Les fichiers écrits par le travailleur restent modifiables par les commandes de l'IA.
+UMask=0002
 # Lancé en root. Le travailleur range lui-même ce qu'une coupure aurait laissé.
 ExecStartPre=+/usr/local/sbin/bria-pare-feu
 ExecStart=/usr/local/bin/node src/main.ts
