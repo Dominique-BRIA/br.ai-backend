@@ -27,8 +27,12 @@ export interface ToolCall {
   function: { name: string; arguments: string };
 }
 
+/** Morceau d'un message avec images, pour les modèles de vision. */
+export type ContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
+
 export type ChatMessage =
   | { role: "system" | "user"; content: string }
+  | { role: "user"; content: ContentPart[] }
   | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }
   | { role: "tool"; tool_call_id: string; name: string; content: string };
 

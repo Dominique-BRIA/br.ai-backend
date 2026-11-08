@@ -37,6 +37,10 @@ const DISPOSABLE_DIRECTORIES = [
   ".turbo",
 ];
 const MAX_LISTED_FILES = 200;
+/** Une réponse d'outil est limitée : trois diapositives légères y tiennent. */
+const MAX_PREVIEW_CHARS = 185_000;
+/** LibreOffice démarre lentement sur une machine de 1 Go. */
+const PREVIEW_TIMEOUT_MS = 240_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 export interface Outcome {
@@ -119,6 +123,11 @@ export class CloudTools {
         return this.#prepare(orderId, parsed.data.space, parsed.data.repo);
       }
       if (tool === "cloud_cleanup") return this.#cleanup(orderId);
+      if (tool === "cloud_preview") {
+        const preview = cloudTools.cloud_preview.input.safeParse(rawInput);
+        if (!preview.success) return refused("Paramètres invalides.");
+        return this.#preview(orderId, preview.data.path, preview.data.slides);
+      }
       const parsed = cloudTools.cloud_collect.input.safeParse(rawInput);
       if (!parsed.success) return refused("Nom de fichier invalide.");
       return this.#collect(orderId, parsed.data.name);
@@ -470,6 +479,38 @@ export class CloudTools {
     return answer(id, `${count} fichier(s) envoyé(s) dans ${name} (${megabytes(zip.length)} Mo).`);
   }
 
+  /** Produit les images demandées, sous le compte sans droits, et les renvoie au serveur. */
+  async #preview(orderId: string, path: string, slides: number[]): Promise<Outcome> {
+    const root = this.#dir;
+    if (!root || this.#orderId !== orderId) return refused("Le dossier de cette commande n'est pas prêt.");
+    const absolute = await this.#inside(root, path);
+    if (!absolute) return refused("Chemin hors du dossier du projet.");
+    const target = relative(root, absolute).split(sep).join("/");
+    const made = await this.#run(
+      root,
+      `bria-doc apercu ${shellQuote(target)} --diapos ${slides.join(",")}`,
+      PREVIEW_TIMEOUT_MS,
+    );
+    if (!made.ok) return refused(made.output);
+    const images: { slide: number; base64: string }[] = [];
+    let budget = MAX_PREVIEW_CHARS;
+    for (const slide of slides) {
+      const file = await this.#inside(root, `${WORK_DIRECTORY}/apercu/diapo-${slide}.jpg`);
+      if (!file) continue;
+      const info = await lstat(file).catch(() => null);
+      if (!info?.isFile()) continue;
+      const content = await readFile(file).catch(() => null);
+      // Seule une vraie image JPEG repart : ni un lien, ni un autre fichier mis à sa place.
+      if (content?.[0] !== 0xff || content[1] !== 0xd8) continue;
+      const base64 = content.toString("base64");
+      if (base64.length > budget) continue;
+      budget -= base64.length;
+      images.push({ slide, base64 });
+    }
+    const total = Number(/total=(\d+)/.exec(made.output)?.[1] ?? 0);
+    return { ok: true, output: JSON.stringify({ images, total }) };
+  }
+
   /** Fin de commande : l'espace du projet retourne au coffre ; un clone de dépôt est effacé. */
   async #cleanup(orderId: string): Promise<Outcome> {
     if (this.#orderId !== orderId) return { ok: true, output: "Rien à effacer." };
@@ -606,6 +647,8 @@ export class CloudTools {
   }
 }
 
+/** Un chemin dans une commande sh, sans qu'il puisse en sortir. */
+const shellQuote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 const homeOf = (dir: string) => `${dir}-maison`;
 const megabytes = (bytes: number) => (bytes / (1024 * 1024)).toFixed(1).replace(".0", "");
 

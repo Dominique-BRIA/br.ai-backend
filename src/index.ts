@@ -44,10 +44,12 @@ const aiKeys = {
 };
 const serveurChain = parseChain(config.AI_SERVEUR_CHAIN, aiKeys);
 const cuisinierChain = parseChain(config.AI_CUISINIER_CHAIN, aiKeys);
+const visionChain = parseChain(config.AI_VISION_CHAIN, aiKeys);
 
 const { app, kitchen } = await buildApp({
   serveurChain,
   cuisinierChain,
+  visionChain,
   storage: b2 ? new B2Storage(b2) : new DiskStorage(config.FILES_DIR),
   database,
   adminToken: config.ADMIN_TOKEN,

@@ -16,6 +16,9 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y git curl ca-certificates xz-utils sudo iptables python3 python3-venv procps pandoc fonts-dejavu-core
 
+echo "== Rendu des documents (LibreOffice, sans ce qui n'est pas utile)"
+apt-get install -y --no-install-recommends libreoffice-impress poppler-utils fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea
+
 echo "== Node.js $NODE_VERSION"
 if ! node --version 2>/dev/null | grep -q "^v$NODE_VERSION$"; then
   curl -fsSL "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz" \
@@ -68,6 +71,13 @@ cd /opt/bria
 npm ci --omit=dev --workspace=@br-ia/worker --no-audit --no-fund
 chown -R root:root /opt/bria
 chmod -R go-w /opt/bria
+
+# L'outil de documents du cuisinier, disponible dans ses commandes.
+cat > /usr/local/bin/bria-doc <<'EOF'
+#!/bin/sh
+exec /opt/bria-python/bin/python -I -B /opt/bria/packages/worker/outils/bria_doc.py "$@"
+EOF
+chmod 0755 /usr/local/bin/bria-doc
 
 echo "== Jeton de la machine"
 if [ ! -f /etc/bria/worker.env ]; then

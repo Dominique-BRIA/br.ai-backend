@@ -46,6 +46,7 @@ export interface AppOptions {
   serveurChain?: ModelChoice[];
   /** Modèles du cuisinier, dans l'ordre d'essai. Vide : cuisinier désactivé. */
   cuisinierChain?: ModelChoice[];
+  visionChain?: ModelChoice[];
   /** Client d'IA ; par défaut, appels réels aux fournisseurs (les tests en fournissent un faux). */
   ai?: Ai;
   /** Application GitHub ; sans elle, tout passe par la connexion de chaque membre. */
@@ -73,7 +74,9 @@ export async function buildApp(options: AppOptions) {
   const ai = options.ai ?? new AiClient(ctx);
   const cuisinierChain = options.cuisinierChain ?? [];
   const kitchen =
-    cuisinierChain.length > 0 ? new Kitchen(ctx, ai, cuisinierChain, options.githubApp ?? null) : null;
+    cuisinierChain.length > 0
+      ? new Kitchen(ctx, ai, cuisinierChain, options.githubApp ?? null, options.visionChain ?? cuisinierChain)
+      : null;
   if (kitchen) ctx.kitchen = kitchen;
   else app.log.warn("Cuisinier désactivé : aucune clé d'IA configurée pour lui.");
   const serveurChain = options.serveurChain ?? [];

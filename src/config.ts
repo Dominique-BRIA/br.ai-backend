@@ -40,6 +40,10 @@ const schema = z.object({
     .default(
       "gemini:gemini-3.6-flash,mistral:codestral-latest,groq:openai/gpt-oss-120b,gemini:gemini-3.5-flash,zai:glm-4.7-flash,zai:glm-4.5-flash",
     ),
+  /** Modèles qui regardent le rendu des présentations : ils doivent accepter des images. */
+  AI_VISION_CHAIN: z
+    .string()
+    .default("gemini:gemini-3.6-flash,gemini:gemini-3.5-flash,gemini:gemini-3.1-flash-lite"),
   /**
    * Application GitHub de <br/>, facultative : toutes ces variables, ou aucune. La clé privée se
    * donne par son contenu (les retours à la ligne écrits \\n) ou par le chemin de son fichier.

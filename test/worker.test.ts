@@ -167,6 +167,16 @@ describe("fichier .zip", () => {
     expect(readdirSync(join(spacesRoot, PROJECT))).toEqual(["rapport.md"]);
   });
 
+  it("refuse un aperçu hors du dossier du projet", async () => {
+    const { tools } = setup();
+    await prepare(tools);
+    const answer = await tools.handle(ORDER, "cloud_preview", { path: "../autre.pptx", slides: [1] });
+    expect(answer.ok).toBe(false);
+    expect((await tools.handle(ORDER, "cloud_preview", { path: "p.pptx", slides: [1, 2, 3, 4] })).ok).toBe(
+      false,
+    );
+  });
+
   it("garde le refus des suppressions forcées", async () => {
     const { tools } = setup();
     await prepare(tools);

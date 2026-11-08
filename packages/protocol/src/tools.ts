@@ -130,6 +130,13 @@ export const cloudTools = {
   },
   /** Met les fichiers du dossier dans un .zip et l'envoie au serveur. */
   cloud_collect: { input: z.object({ name: z.string().regex(/^[A-Za-z0-9._-]{1,120}$/) }) },
+  /** Images de diapositives d'une présentation, pour le contrôle visuel. */
+  cloud_preview: {
+    input: z.object({
+      path: z.string().min(1).max(400),
+      slides: z.array(z.number().int().positive()).min(1).max(3),
+    }),
+  },
   cloud_cleanup: { input: z.object({}) },
 } as const;
 export type CloudToolName = keyof typeof cloudTools;
@@ -146,4 +153,10 @@ export const cloudCollectResult = z.object({
   names: z.array(z.string()).max(200).default([]),
   note: z.string(),
 });
+/** Réponse de cloud_preview : les diapositives en JPEG. */
+export const cloudPreviewResult = z.object({
+  images: z.array(z.object({ slide: z.number().int().positive(), base64: z.string().min(1) })).max(3),
+  total: z.number().int().nonnegative(),
+});
+
 export type CloudCollectResult = z.infer<typeof cloudCollectResult>;

@@ -167,4 +167,64 @@ describe("machine cloud", () => {
     const placed = await order("member", "Commande ordinaire");
     expect(placed.json.order.runOn).toBe("member");
   });
+
+  it("regarde le rendu d'une présentation modifiée avant de terminer", async () => {
+    const created = await t.call<{ token: string }>("POST", "/admin/cloud-machines", {
+      admin: true,
+      body: { label: "vision" },
+    });
+    const live = await t.live(created.json.token);
+    await live.next("welcome");
+    const tools: string[] = [];
+    let running = true;
+    void (async () => {
+      while (running) {
+        const call = await live.next("tool.call");
+        tools.push(call.tool);
+        const output =
+          call.tool === "cloud_preview"
+            ? JSON.stringify({ images: [{ slide: 1, base64: "/9j/AA==" }], total: 6 })
+            : call.tool === "cloud_collect"
+              ? JSON.stringify({ attachmentId: null, files: 0, note: "Rien." })
+              : "ok";
+        live.socket.send(JSON.stringify({ type: "tool.result", callId: call.callId, ok: true, output }));
+      }
+    })();
+
+    ai.turns.push(
+      { calls: [{ name: "run_command", input: { command: 'bria-doc remplacer p.pptx "a" "b"' } }] },
+      { calls: [{ name: "finish", input: { success: true, summary: "Trop tôt." } }] },
+      {
+        calls: [
+          { name: "visual_check", input: { path: "p.pptx", slides: [1], expected: "Le titre est changé." } },
+        ],
+      },
+      { calls: [{ name: "finish", input: { success: true, summary: "Titre changé et regardé." } }] },
+    );
+    ai.replies.push("Diapositive 1 : OK");
+    const placed = await order("cloud");
+    const stored = async () =>
+      (
+        await t.call<{ orders: Order[] }>("GET", `/projects/${projectId}/orders`, { token: ali.token })
+      ).json.orders.find((candidate) => candidate.id === placed.json.order.id);
+    await waitFor(async () => (await stored())?.status === "done");
+    await waitFor(async () => tools.includes("cloud_cleanup"));
+    running = false;
+    live.socket.close();
+
+    expect((await stored())?.summary).toBe("Titre changé et regardé.");
+    expect(tools).toEqual([
+      "cloud_prepare",
+      "run_command",
+      "cloud_preview",
+      "cloud_collect",
+      "cloud_cleanup",
+    ]);
+    const vision = ai.requests.at(-1);
+    expect(vision?.purpose).toBe("cuisinier-vision");
+    expect(JSON.stringify(vision?.messages)).toContain("data:image/jpeg;base64,/9j/AA==");
+    // La conversation du cuisinier reste en texte : tous ses modèles peuvent la relire.
+    expect(JSON.stringify(ai.toolRequests.at(-1)?.messages)).not.toContain("image_url");
+    expect((await stored())?.steps.some((step) => step.text === "Modèle utilisé : faux/faux")).toBe(true);
+  });
 });

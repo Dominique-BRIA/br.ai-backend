@@ -5,6 +5,8 @@ const CODE_FILE =
 const MAX_FAILED_ATTEMPTS = 3;
 /** Rappels avant d'accepter quand même la fin : la commande ne doit pas tourner en rond. */
 const MAX_REMINDERS = 2;
+/** Chaque contrôle visuel consomme du quota : il ne peut pas se répéter sans fin. */
+const MAX_VISUAL_CHECKS = 6;
 
 /**
  * Ce que le cuisinier a vérifié de son propre travail. Il ne termine pas une commande sans avoir
@@ -15,6 +17,9 @@ export class WorkCheck {
   readonly #failures = new Map<string, number>();
   #failedCommand: string | null = null;
   #reminders = 0;
+  #unseenDocument = false;
+  #visionDown = false;
+  #visualChecks = 0;
 
   wrote(path: string): void {
     this.#unverified.add(path);
@@ -35,6 +40,29 @@ export class WorkCheck {
     }
   }
 
+  /** Une présentation a été créée ou modifiée : quelqu'un doit la regarder. */
+  documentChanged(): void {
+    this.#unseenDocument = true;
+  }
+
+  /** Le modèle de vision a regardé la présentation. */
+  documentSeen(): void {
+    this.#unseenDocument = false;
+  }
+
+  /** Le contrôle visuel n'est pas possible : ne pas insister, mais le dire dans le bilan. */
+  visionUnavailable(): void {
+    this.#unseenDocument = false;
+    this.#visionDown = true;
+  }
+
+  /** Vrai tant qu'il reste un contrôle visuel permis ; le compte en est tenu ici. */
+  allowVisualCheck(): boolean {
+    if (this.#visualChecks >= MAX_VISUAL_CHECKS) return false;
+    this.#visualChecks++;
+    return true;
+  }
+
   /** Cette commande a déjà échoué trop de fois : le cuisinier doit changer d'approche. */
   exhausted(command: string): boolean {
     return (this.#failures.get(command) ?? 0) >= MAX_FAILED_ATTEMPTS;
@@ -51,10 +79,14 @@ export class WorkCheck {
   /** Ligne à ajouter au bilan si la commande se termine sans vérification. */
   note(): string {
     const missing = this.#missing();
-    return missing ? `\n\n**Non vérifié** : ${missing}` : "";
+    const vision = this.#visionDown
+      ? "\n\n**Rendu non contrôlé** : le contrôle visuel n'était pas disponible."
+      : "";
+    return `${missing ? `\n\n**Non vérifié** : ${missing}` : ""}${vision}`;
   }
 
   #missing(): string | null {
+    if (this.#unseenDocument) return "la présentation n'a pas été regardée avec visual_check.";
     if (this.#failedCommand) return `la dernière commande a échoué (${this.#failedCommand}).`;
     if (this.#unverified.size > 0) {
       return `ce fichier n'a pas été vérifié après sa modification : ${[...this.#unverified].join(", ")}.`;
