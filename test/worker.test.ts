@@ -155,6 +155,23 @@ describe("espace réservé du projet", () => {
 });
 
 describe("fichier .zip", () => {
+  it("ne contient que ce que la commande a créé ou modifié", async () => {
+    const { tools, delivered } = setup();
+    await prepare(tools);
+    await tools.handle(ORDER, "write_file", { path: "garde.md", content: "ancien" });
+    await tools.handle(ORDER, "write_file", { path: "change.md", content: "ancien" });
+    await tools.handle(ORDER, "cloud_cleanup", {});
+
+    await prepare(tools, NEXT_ORDER);
+    expect(
+      JSON.parse((await tools.handle(NEXT_ORDER, "cloud_collect", { name: "vide.zip" })).output).attachmentId,
+    ).toBeNull();
+    await tools.handle(NEXT_ORDER, "write_file", { path: "change.md", content: "nouveau contenu" });
+    await tools.handle(NEXT_ORDER, "write_file", { path: "neuf.md", content: "neuf" });
+    await tools.handle(NEXT_ORDER, "cloud_collect", { name: "b.zip" });
+    expect(contents(delivered.at(-1)?.bytes)).toEqual({ "change.md": "nouveau contenu", "neuf.md": "neuf" });
+  });
+
   it("n'envoie ni ne garde le dossier de travail du cuisinier", async () => {
     const { tools, delivered, spacesRoot } = setup();
     await prepare(tools);
@@ -300,7 +317,7 @@ describe("sécurité de la machine cloud", () => {
     );
     // Le .zip contient le travail, sans `.git`.
     await tools.handle(ORDER, "cloud_collect", { name: "page.zip" });
-    expect(Object.keys(contents(delivered[0]?.bytes)).sort()).toEqual(["index.html", "page.html"]);
+    expect(Object.keys(contents(delivered[0]?.bytes)).sort()).toEqual(["page.html"]);
 
     // Un clone n'est pas gardé : GitHub reste sa place ; une reprise repart de ce qui est poussé.
     await tools.handle(ORDER, "cloud_cleanup", {});
@@ -420,9 +437,42 @@ describe("travailleur relié au serveur", () => {
       headers: { authorization: `Bearer ${ali.token}` },
     });
     expect(contents(new Uint8Array(download.rawPayload))).toEqual({ "fiche.md": "# Fiche" });
+
+    // L'espace Fichiers liste le .zip et donne accès à chaque fichier qu'il contient.
+    const listed = await t.call<{ files: { id: string; uploadedBy: string | null }[] }>(
+      "GET",
+      `/projects/${projectId}/files`,
+      { token: ali.token },
+    );
+    expect(listed.json.files[0]).toMatchObject({ id: file?.id, uploadedBy: null });
+    const inside = await t.call<{ entries: { path: string; size: number }[] }>(
+      "GET",
+      `/attachments/${file?.id}/files`,
+      { token: ali.token },
+    );
+    expect(inside.json.entries).toEqual([{ path: "fiche.md", size: 7 }]);
+    const authorization = `Bearer ${ali.token}`;
+    const entry = await t.app.inject({
+      method: "GET",
+      url: `/attachments/${file?.id}/files/content?path=fiche.md&view=1`,
+      headers: { authorization },
+    });
+    expect(entry.payload).toBe("# Fiche");
+    expect(entry.headers["content-disposition"]).toContain("inline");
+    const absent = await t.app.inject({
+      method: "GET",
+      url: `/attachments/${file?.id}/files/content?path=autre.md`,
+      headers: { authorization },
+    });
+    expect(absent.statusCode).toBe(404);
+    const outsider = await t.signUp("sam-fichiers@exemple.org", "Sam");
+    expect((await t.call("GET", `/projects/${projectId}/files`, { token: outsider.token })).status).toBe(404);
+    expect((await t.call("GET", `/attachments/${file?.id}/files`, { token: outsider.token })).status).toBe(
+      404,
+    );
   }, 60_000);
 
-  it("retrouve l'espace du projet à la commande suivante, et complète le .zip", async () => {
+  it("retrouve l'espace du projet à la commande suivante, et n'envoie que le nouveau travail", async () => {
     ai.turns.push(
       { calls: [{ name: "read_file", input: { path: "fiche.md" } }] },
       { calls: [{ name: "write_file", input: { path: "plan.md", content: "# Plan" } }] },
@@ -442,10 +492,7 @@ describe("travailleur relié au serveur", () => {
       url: `/attachments/${file?.id}`,
       headers: { authorization: `Bearer ${ali.token}` },
     });
-    expect(Object.keys(contents(new Uint8Array(download.rawPayload))).sort()).toEqual([
-      "fiche.md",
-      "plan.md",
-    ]);
+    expect(Object.keys(contents(new Uint8Array(download.rawPayload))).sort()).toEqual(["plan.md"]);
   }, 60_000);
 
   it("envoie une demande à @bria sur le cloud quand aucune machine n'a le projet", async () => {

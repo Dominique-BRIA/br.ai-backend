@@ -213,6 +213,17 @@ export const ATTACHMENT_TYPE_HEADER = "x-file-type";
 export const attachmentResponse = z.object({ attachment });
 export type AttachmentResponse = z.infer<typeof attachmentResponse>;
 
+/** GET /projects/:projectId/files — les fichiers partagés dans le chat. `uploadedBy` nul : le cuisinier. */
+export const projectFile = attachment.extend({ createdAt: z.string(), uploadedBy: z.string().nullable() });
+export type ProjectFile = z.infer<typeof projectFile>;
+export interface ProjectFilesResponse {
+  files: ProjectFile[];
+}
+/** GET /attachments/:attachmentId/files — le contenu d'un fichier .zip. */
+export interface ZipEntriesResponse {
+  entries: { path: string; size: number }[];
+}
+
 // Compte
 
 /** PATCH /me */

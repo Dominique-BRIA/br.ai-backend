@@ -84,6 +84,8 @@ export class CloudTools {
   readonly #options: ToolsOptions;
   #orderId: string | null = null;
   #dir: string | null = null;
+  /** L'état du dossier au début de la commande, pour n'envoyer que ce qui a changé. */
+  #baseline: Map<string, string> | null = null;
   /** Où ranger le dossier à la fin : l'espace du projet ; `null` pour un clone, effacé. */
   #keep: string | null = null;
   /** Processus de la commande en cours, pour l'arrêter quand la commande s'arrête. */
@@ -400,6 +402,7 @@ export class CloudTools {
       this.#dir = dir;
       this.#keep = stored;
       this.#token = null;
+      await this.#rememberBaseline(dir);
       return {
         ok: true,
         output:
@@ -425,6 +428,7 @@ export class CloudTools {
     await this.#git(dir, ["config", "user.email", repo.author.email]);
     // Le dossier de travail du cuisinier n'entre jamais dans un commit.
     await appendFile(join(dir, ".git", "info", "exclude"), `\n${WORK_DIRECTORY}/\n`);
+    await this.#rememberBaseline(dir);
     return { ok: true, output: `Dépôt ${repo.fullName} cloné sur la machine cloud.` };
   }
 
@@ -435,29 +439,16 @@ export class CloudTools {
     const files: Record<string, Uint8Array> = {};
     let count = 0;
     let total = 0;
-    const walk = async (folder: string): Promise<void> => {
-      const entries = await readdir(folder, { withFileTypes: true }).catch(() => []);
-      for (const entry of entries) {
-        const full = join(folder, entry.name);
-        if (entry.isDirectory()) {
-          // Ni les dossiers techniques, ni le dossier de travail du cuisinier.
-          if (!IGNORED_DIRECTORIES.has(entry.name) && !DISPOSABLE_DIRECTORIES.includes(entry.name)) {
-            await walk(full);
-          }
-          continue;
-        }
-        // Les liens symboliques ne sont pas rendus : ils pourraient viser n'importe quel fichier.
-        if (!entry.isFile()) continue;
-        const info = await lstat(full).catch(() => null);
-        if (!info || total + info.size > MAX_ZIP_INPUT_BYTES) continue;
-        const content = await readFile(full).catch(() => null);
-        if (!content) continue;
-        total += content.length;
-        count++;
-        files[relative(root, full).split(sep).join("/")] = content;
-      }
-    };
-    await walk(root);
+    const baseline = this.#baseline;
+    for (const [path, { full, size, stamp }] of await this.#inventory(root)) {
+      // Seul le travail de cette commande : le reste demeure dans l'espace du projet.
+      if (baseline?.get(path) === stamp || total + size > MAX_ZIP_INPUT_BYTES) continue;
+      const content = await readFile(full).catch(() => null);
+      if (!content) continue;
+      total += content.length;
+      count++;
+      files[path] = content;
+    }
     const answer = (attachmentId: string | null, note: string): Outcome => ({
       ok: true,
       output: JSON.stringify({
@@ -467,7 +458,7 @@ export class CloudTools {
         note,
       }),
     });
-    if (count === 0) return answer(null, "Aucun fichier à envoyer dans l'espace du projet.");
+    if (count === 0) return answer(null, "Aucun fichier créé ou modifié par cette commande.");
     const zip = zipSync(files);
     if (zip.length > MAX_ZIP_BYTES) {
       return answer(
@@ -477,6 +468,40 @@ export class CloudTools {
     }
     const id = await this.#options.deliver(orderId, name, zip);
     return answer(id, `${count} fichier(s) envoyé(s) dans ${name} (${megabytes(zip.length)} Mo).`);
+  }
+
+  /** Les fichiers du dossier, sans les dossiers techniques ni le dossier de travail. */
+  async #inventory(root: string): Promise<Map<string, { full: string; size: number; stamp: string }>> {
+    const found = new Map<string, { full: string; size: number; stamp: string }>();
+    const walk = async (folder: string): Promise<void> => {
+      const entries = await readdir(folder, { withFileTypes: true }).catch(() => []);
+      for (const entry of entries) {
+        const full = join(folder, entry.name);
+        if (entry.isDirectory()) {
+          if (!IGNORED_DIRECTORIES.has(entry.name) && !DISPOSABLE_DIRECTORIES.includes(entry.name)) {
+            await walk(full);
+          }
+          continue;
+        }
+        // Les liens symboliques ne sont pas rendus : ils pourraient viser n'importe quel fichier.
+        if (!entry.isFile()) continue;
+        const info = await lstat(full).catch(() => null);
+        if (!info) continue;
+        found.set(relative(root, full).split(sep).join("/"), {
+          full,
+          size: info.size,
+          stamp: `${info.size}:${info.mtimeMs}`,
+        });
+      }
+    };
+    await walk(root);
+    return found;
+  }
+
+  /** Note l'état du dossier avant le travail de l'IA. */
+  async #rememberBaseline(root: string): Promise<void> {
+    const inventory = await this.#inventory(root);
+    this.#baseline = new Map([...inventory].map(([path, { stamp }]) => [path, stamp]));
   }
 
   /** Produit les images demandées, sous le compte sans droits, et les renvoie au serveur. */
@@ -524,6 +549,7 @@ export class CloudTools {
     this.#dir = null;
     this.#keep = null;
     this.#token = null;
+    this.#baseline = null;
     return { ok: true, output: "Dossier de la commande rangé." };
   }
 

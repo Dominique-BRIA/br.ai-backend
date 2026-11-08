@@ -68,6 +68,8 @@ export interface Completion {
 export interface ToolTurnRequest extends Accounting {
   messages: ChatMessage[];
   tools: ToolDefinition[];
+  /** Le modèle du tour précédent : il reste en place tant qu'il répond. */
+  prefer?: { provider: string; model: string };
 }
 
 /** Un tour de l'IA avec outils : du texte, des appels d'outils, ou les deux. */
@@ -76,6 +78,8 @@ export interface ToolTurn {
   toolCalls: ToolCall[];
   provider: string;
   model: string;
+  /** Les modèles essayés sans succès avant celui-ci, avec leur code d'erreur. */
+  skipped?: string[];
 }
 
 export class AiUnavailableError extends Error {}
@@ -134,17 +138,24 @@ export class AiClient implements Ai {
   }
 
   async toolTurn(chain: ModelChoice[], request: ToolTurnRequest): Promise<ToolTurn> {
-    return this.#firstSuccess(chain, request, async (choice) => {
-      const message = await this.#call(choice, request, {
-        messages: messagesFor(choice.provider.name, request.messages),
-        tools: request.tools,
-        tool_choice: "auto",
-      });
-      const toolCalls = message.tool_calls ?? [];
-      const content = message.content?.trim() || null;
-      if (!content && toolCalls.length === 0) throw new Error("Réponse vide.");
-      return { content, toolCalls, provider: choice.provider.name, model: choice.model };
-    });
+    const failures: string[] = [];
+    const turn = await this.#firstSuccess(
+      chain,
+      request,
+      async (choice) => {
+        const message = await this.#call(choice, request, {
+          messages: messagesFor(choice.provider.name, request.messages),
+          tools: request.tools,
+          tool_choice: "auto",
+        });
+        const toolCalls = message.tool_calls ?? [];
+        const content = message.content?.trim() || null;
+        if (!content && toolCalls.length === 0) throw new Error("Réponse vide.");
+        return { content, toolCalls, provider: choice.provider.name, model: choice.model };
+      },
+      { prefer: request.prefer, failures },
+    );
+    return { ...turn, skipped: failures.map(shortFailure) };
   }
 
   /** Essaie les modèles de la chaîne dans l'ordre jusqu'à une réponse exploitable. */
@@ -152,11 +163,17 @@ export class AiClient implements Ai {
     chain: ModelChoice[],
     request: Accounting,
     run: (choice: ModelChoice) => Promise<T>,
+    options: { prefer?: ToolTurnRequest["prefer"]; failures?: string[] } = {},
   ) {
-    const failures: string[] = [];
+    const failures = options.failures ?? [];
     // Un modèle au quota épuisé est sauté tant que sa pause dure, sauf si tous le sont.
     const ready = chain.filter((choice) => (this.#pausedUntil.get(keyOf(choice)) ?? 0) <= Date.now());
-    for (const choice of ready.length > 0 ? ready : chain) {
+    const pool = ready.length > 0 ? ready : chain;
+    const { prefer } = options;
+    const preferred = prefer
+      ? pool.find((choice) => choice.provider.name === prefer.provider && choice.model === prefer.model)
+      : undefined;
+    for (const choice of preferred ? [preferred, ...pool.filter((item) => item !== preferred)] : pool) {
       try {
         return await run(choice);
       } catch (error) {
@@ -268,6 +285,13 @@ const keyOf = (choice: ModelChoice) => `${choice.provider.name}:${choice.model}`
  * les autres fournisseurs les refusent. Mistral exige en plus des identifiants de 9 lettres ou
  * chiffres : les autres sont remplacés par une empreinte, la même pour l'appel et sa réponse.
  */
+/** « fournisseur/modèle (429) », sans le détail du fournisseur. */
+function shortFailure(failure: string): string {
+  const [model = "", reason = ""] = failure.split(" : ");
+  const status = /HTTP (\d+)/.exec(reason)?.[1];
+  return `${model} (${status ?? "échec"})`;
+}
+
 export function messagesFor(provider: string, messages: ChatMessage[]): ChatMessage[] {
   if (provider === "gemini") return messages;
   const id = (value: string) =>

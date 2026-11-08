@@ -61,7 +61,7 @@ const CLOUD_MACHINE_LINES = [
   'Les présentations PowerPoint existantes se modifient uniquement avec bria-doc, lancé par run_command depuis le dossier du projet, jamais avec un script qui réécrit une diapositive. Commence par : bria-doc inspecter fichier.pptx (il numérote les diapositives et les formes). Ensuite : bria-doc remplacer fichier.pptx "ancien" "nouveau" [--diapo N] ; modifier-texte fichier.pptx DIAPO FORME "texte" ; ajouter-paragraphe fichier.pptx DIAPO FORME "texte" ; copier-forme fichier.pptx DIAPO FORME VERS_DIAPO "texte" [--gauche %] [--haut %] ; deplacer-forme fichier.pptx DIAPO FORME [--gauche %] [--haut %] [--largeur %] [--hauteur %] ; supprimer-forme fichier.pptx DIAPO FORME ; dupliquer-diapo fichier.pptx DIAPO [--position P], puis remplacer ses textes, pour ajouter une diapositive dans le même style ; supprimer-diapo fichier.pptx DIAPO ; deplacer-diapo fichier.pptx DIAPO POSITION ; restaurer fichier.pptx pour annuler la dernière modification. Change seulement l\'élément demandé, sans rien ajouter à côté. « À la fin de la présentation » désigne la dernière diapositive. Corrige ce que bria-doc affiche sous « À vérifier ».',
   "Pour une nouvelle présentation, écris un script python-pptx dans .travail/. Après avoir créé ou modifié une présentation, appelle visual_check sur les diapositives concernées (trois par appel) en décrivant le résultat attendu. C'est le seul moyen de voir le rendu : corrige ce qu'il signale et rappelle-le jusqu'à obtenir un résultat correct avant de terminer.",
   "Pour les documents, Python 3 est prêt avec python-pptx (présentations), python-docx (Word), openpyxl (Excel), reportlab (PDF) et matplotlib (graphiques), ainsi que pandoc. Écris un script, lance-le avec run_command, puis vérifie que le fichier existe.",
-  "Les membres ne sont pas forcément développeurs : écris ton bilan en langage simple, sans parler de scripts ni de commandes, et dis quels fichiers ils trouveront dans le .zip. Ne laisse pas de fichiers de travail inutiles dans l'espace.",
+  "Les membres ne sont pas forcément développeurs : écris ton bilan en langage simple, sans parler de scripts, de commandes ni d'outils (bria-doc, visual_check, .travail), et dis quels fichiers ils trouveront dans le .zip. Ne laisse pas de fichiers de travail inutiles dans l'espace.",
 ];
 
 /** Nombre d'étapes gardées dans la commande. */
@@ -669,12 +669,19 @@ export class Kitchen implements KitchenHooks {
           projectId: order.projectId,
           messages,
           tools: cloud ? CLOUD_TOOLS : TOOLS,
+          prefer: modelInUse
+            ? {
+                provider: modelInUse.split("/")[0] ?? "",
+                model: modelInUse.slice(modelInUse.indexOf("/") + 1),
+              }
+            : undefined,
         });
         messages.push({ role: "assistant", content: reply.content, tool_calls: reply.toolCalls });
         const used = `${reply.provider}/${reply.model}`;
         if (used !== modelInUse) {
           modelInUse = used;
-          await this.#step(order.id, "info", `Modèle utilisé : ${used}`);
+          const skipped = reply.skipped?.length ? ` (écartés : ${reply.skipped.join(", ")})` : "";
+          await this.#step(order.id, "info", `Modèle utilisé : ${used}${skipped}`);
         }
 
         if (reply.toolCalls.length === 0) {
