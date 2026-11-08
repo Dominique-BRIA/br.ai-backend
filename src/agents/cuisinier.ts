@@ -43,6 +43,9 @@ const CLOUD_WAITING_TEXT =
 /** Coupée depuis moins longtemps, une commande reprend au redémarrage du serveur. */
 const INTERRUPTED_RESUME_MS = 30 * 60_000;
 
+/** Où une commande est réalisée. */
+type RunOn = "member" | "cloud";
+
 /** Ce qu'une commande cloud rend à l'équipe. */
 interface Delivered {
   files: string[];
@@ -312,7 +315,13 @@ export class Kitchen implements KitchenHooks {
    * la prend en compte au tour suivant ; terminée, la commande repart de ce qui est déjà fait, sur
    * la même branche. Une commande déjà fusionnée ne repart pas : renvoie `null`.
    */
-  async followUp(orderId: string, teamId: string, text: string, userId: string): Promise<Order | null> {
+  async followUp(
+    orderId: string,
+    teamId: string,
+    text: string,
+    userId: string,
+    runOn?: RunOn,
+  ): Promise<Order | null> {
     const [row] = await this.#ctx.db.select().from(orders).where(eq(orders.id, orderId));
     if (!row || row.mergedAt) return null;
     const brief = `${row.brief}\n\nSuite demandée : ${text}`.slice(0, 12_000);
@@ -329,6 +338,7 @@ export class Kitchen implements KitchenHooks {
           followUp: row.followUp ? `${row.followUp}\n${text}` : text,
           requestedByUserId: userId,
           relayFromSessionId: null,
+          ...(runOn && { runOn }),
           updatedAt: new Date(),
         })
         .where(eq(orders.id, orderId));
@@ -340,17 +350,22 @@ export class Kitchen implements KitchenHooks {
   }
 
   /**
-   * Où réaliser une commande passée par le chat. Sans dépôt et sans aucune machine sur le projet,
-   * comme pour un membre qui n'a pas d'ordinateur, elle part sur la machine cloud plutôt que d'attendre.
+   * Où réaliser une commande passée par le chat. Le choix du membre d'abord. Sinon, un projet sans
+   * dépôt part sur la machine cloud, comme dans le formulaire : c'est elle qui rend le .zip. La
+   * machine d'un membre ne sert que si la machine cloud est hors ligne.
    */
-  async defaultRunOn(projectId: string): Promise<"member" | "cloud"> {
+  async chooseRunOn(projectId: string, requested?: RunOn | null): Promise<RunOn> {
     if (!(await cloudConfigured(this.#ctx))) return "member";
+    if (requested) return requested;
     const [project] = await this.#ctx.db
       .select({ repoFullName: projects.repoFullName })
       .from(projects)
       .where(eq(projects.id, projectId));
     if (project?.repoFullName) return "member";
-    return this.#ctx.hub.all().some((connection) => connection.projects.has(projectId)) ? "member" : "cloud";
+    const connections = this.#ctx.hub.all();
+    const cloudOnline = connections.some((connection) => connection.userId === CLOUD_USER_ID);
+    const memberOnline = connections.some((connection) => connection.projects.has(projectId));
+    return cloudOnline || !memberOnline ? "cloud" : "member";
   }
 
   /** Arrête une commande en attente ou en cours. */

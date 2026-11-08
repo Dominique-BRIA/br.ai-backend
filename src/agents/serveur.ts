@@ -44,6 +44,8 @@ const output = z.object({
       brief: z.string().trim().min(1).max(6000),
       /** Numéro de la commande que cette demande prolonge ; absent : une nouvelle commande. */
       continues: z.number().int().positive().nullable().optional(),
+      /** Où travailler, seulement si le membre le précise. */
+      runOn: z.enum(["member", "cloud"]).nullable().optional(),
     })
     .nullable()
     .default(null),
@@ -115,6 +117,7 @@ Pour chaque nouveau message, classe-le dans une catégorie :
   - Si la demande prolonge, corrige ou complète une commande récente (« ajoute », « corrige », « change », « et aussi »), ce n'est pas une nouvelle commande : mets son numéro dans "continues", et dans "brief" seulement ce qui est demandé en plus. Une nouvelle commande est réservée à un travail sans lien avec les précédentes.
   - N'annonce jamais un travail (« j'ajoute », « je m'en occupe », « je transmets ») sans remplir "order" : sans cela, le cuisinier ne reçoit rien.
   - N'envoie jamais le membre régler lui-même ce que le cuisinier peut faire, et ne pose une question que si le travail est impossible sans la réponse.
+  - "runOn" reste null sauf si le membre précise où travailler : "cloud" pour la machine cloud, "member" pour son propre ordinateur.
   - Sinon, laisse "order" à null et pose les questions qui manquent, brièvement.
 
 Mémoire du projet :
@@ -129,11 +132,12 @@ Préférence personnelle :
 Ta réponse (quand tu réponds) :
 - dans la langue du message, sur le ton d'un collègue : clair, concis, sans emoji ni point d'exclamation ;
 - en Markdown si c'est utile (listes, tableaux) ;
-- en t'appuyant sur la mémoire et l'historique, sans inventer ce que tu ne sais pas.
+- en t'appuyant sur la mémoire et l'historique, sans inventer ce que tu ne sais pas ;
+- sans jamais affirmer où se trouve un fichier ou comment le télécharger sans l'avoir lu dans le fil : une commande sur la machine cloud rend un .zip joint à son message de fin ; une commande sur la machine d'un membre laisse ses fichiers dans le dossier du projet sur son ordinateur, sans téléchargement. Regarde où chaque commande a été réalisée dans « Commandes récentes ».
 Si le message contient @bria, tu dois répondre.
 
 Renvoie uniquement un objet JSON de la forme :
-{"category": "...", "reply": "texte ou null", "memory": [{"op": "add", "type": "...", "text": "..."}, {"op": "resolve", "ref": "M1", "status": "resolved"}], "order": null ou {"title": "...", "brief": "..."}, "preference": null ou "..."}`;
+{"category": "...", "reply": "texte ou null", "memory": [{"op": "add", "type": "...", "text": "..."}, {"op": "resolve", "ref": "M1", "status": "resolved"}], "order": null ou {"title": "...", "brief": "...", "continues": null ou numéro, "runOn": null ou "cloud" ou "member"}, "preference": null ou "..."}`;
 
 /** Nom d'un auteur tel que l'IA le lit dans le fil. */
 function authorLabel(author: Message["author"]): string {
@@ -363,13 +367,22 @@ export class ServeurAgent {
       });
     } else if (result.order && this.kitchen) {
       // Une suite continue la commande au lieu d'en créer une nouvelle.
+      const requested = result.order.runOn ?? null;
+      const runOn = await this.kitchen.chooseRunOn(message.projectId, requested);
       const continued =
-        followed && (await this.kitchen.followUp(followed.id, teamId, result.order.brief, author.userId));
+        followed &&
+        (await this.kitchen.followUp(
+          followed.id,
+          teamId,
+          result.order.brief,
+          author.userId,
+          requested ? runOn : undefined,
+        ));
       if (!continued)
         await this.kitchen.createOrder({
           projectId: message.projectId,
           teamId,
-          runOn: await this.kitchen.defaultRunOn(message.projectId),
+          runOn,
           title: result.order.title,
           brief: result.order.brief,
           requestedByUserId: author.userId,
@@ -486,7 +499,7 @@ export class ServeurAgent {
       ...(recentOrders.length > 0
         ? recentOrders.map(
             (order) =>
-              `- n° ${order.number} « ${order.title} » (${order.merged ? "fusionnée : ne peut plus continuer" : order.status})${order.summary ? ` : ${order.summary.slice(0, 200)}` : ""}`,
+              `- n° ${order.number} « ${order.title} » (${order.merged ? "fusionnée : ne peut plus continuer" : order.status}, ${order.runOn === "cloud" ? "machine cloud" : "machine d'un membre"})${order.summary ? ` : ${order.summary.slice(0, 200)}` : ""}`,
           )
         : ["(aucune)"]),
       "",

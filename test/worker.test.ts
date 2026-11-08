@@ -466,6 +466,30 @@ describe("travailleur relié au serveur", () => {
     expect((await waitDone(created.id)).status).toBe("done");
   }, 60_000);
 
+  it("préfère la machine cloud même si un membre a le projet, sauf demande contraire", async () => {
+    const live = await t.live(ali.token);
+    await live.next("welcome");
+    live.socket.send(JSON.stringify({ type: "machine.status", projects: [projectId], lending: false }));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const ask = async (body: string, runOn: "member" | null, title: string) => {
+      ai.replies.push({
+        category: "request",
+        reply: "Je transmets.",
+        memory: [],
+        order: { title, brief: "Faire.", runOn },
+      });
+      ai.turns.push({ calls: [{ name: "finish", input: { success: true, summary: "Fait." } }] });
+      await t.call("POST", `/projects/${projectId}/messages`, { token: ali.token, body: { body } });
+      await t.serveur?.idle();
+      const created = (await orders()).find((order) => order.title === title) as Order;
+      await waitDone(created.id);
+      return created;
+    };
+    expect((await ask("@bria fais un rapport", null, "Rapport")).runOn).toBe("cloud");
+    expect((await ask("@bria fais-le sur mon ordinateur", "member", "Sur mon PC")).runOn).toBe("member");
+    live.socket.close();
+  }, 60_000);
+
   it("pousse la branche au nom du demandeur sur un projet avec dépôt", async () => {
     await t.call("PUT", `/projects/${projectId}/repo`, {
       token: ali.token,
