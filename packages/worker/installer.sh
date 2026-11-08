@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installe la machine cloud du cuisinier de <br/> sur une VM Debian 12 x64 (Azure B2ats_v2, 1 Go).
+# Installe la machine cloud du cuisinier de <br/> sur une VM Debian 12 ou Ubuntu 24.04 x64 (Azure B2ats_v2, 1 Go).
 # À lancer en root :  sudo sh installer.sh
 #
 # Deux comptes Linux :
@@ -94,6 +94,10 @@ echo "== Pare-feu des commandes de l'IA"
 # Ni les services internes de l'hébergeur (métadonnées, jetons), ni le réseau interne, ni l'envoi de mails.
 cat > /usr/local/sbin/bria-pare-feu <<'EOF'
 #!/bin/sh
+# Lancé par le service, dont le PATH ne contient pas /usr/sbin. Une règle refusée arrête tout :
+# le travailleur ne doit pas démarrer avec un pare-feu incomplet.
+PATH=/usr/sbin:/sbin:/usr/bin:/bin
+set -e
 RUN_UID=$(id -u bria-run)
 iptables -F BRIA_RUN 2>/dev/null || iptables -N BRIA_RUN
 iptables -C OUTPUT -m owner --uid-owner "$RUN_UID" -j BRIA_RUN 2>/dev/null \
