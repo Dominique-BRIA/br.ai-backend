@@ -169,6 +169,13 @@
       "when": 1794398200363,
       "tag": "0023_documents_lisibles",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1794402988357,
+      "tag": "0024_connaissances",
+      "breakpoints": true
     }
   ]
 }

@@ -138,6 +138,18 @@ export const cloudTools = {
     }),
   },
   cloud_cleanup: { input: z.object({}) },
+  /** Recherche web, par le moteur installé sur la machine cloud. */
+  cloud_web_search: { input: z.object({ query: z.string().trim().min(2).max(300) }) },
+  /** Le texte d'une page web, lu sous le compte sans droits, derrière le pare-feu. */
+  cloud_web_read: {
+    input: z.object({
+      url: z
+        .string()
+        .trim()
+        .regex(/^https?:\/\//i)
+        .max(2000),
+    }),
+  },
 } as const;
 export type CloudToolName = keyof typeof cloudTools;
 

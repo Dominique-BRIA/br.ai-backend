@@ -39,7 +39,7 @@ if [ ! -x /opt/bria-python/bin/python ]; then
   python3 -m venv /opt/bria-python
 fi
 /opt/bria-python/bin/pip install --quiet --upgrade pip
-/opt/bria-python/bin/pip install --quiet python-pptx python-docx openpyxl reportlab matplotlib pillow
+/opt/bria-python/bin/pip install --quiet python-pptx python-docx openpyxl reportlab matplotlib pillow trafilatura ddgs
 
 echo "== Comptes et dossiers"
 id bria-run >/dev/null 2>&1 || useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin bria-run
@@ -78,6 +78,69 @@ cat > /usr/local/bin/bria-doc <<'EOF'
 exec /opt/bria-python/bin/python -I -B /opt/bria/packages/worker/outils/bria_doc.py "$@"
 EOF
 chmod 0755 /usr/local/bin/bria-doc
+
+cat > /usr/local/bin/bria-web <<'EOF'
+#!/bin/sh
+exec /opt/bria-python/bin/python -I -B /opt/bria/packages/worker/outils/bria_web.py "$@"
+EOF
+chmod 0755 /usr/local/bin/bria-web
+
+echo "== Moteur de recherche (SearXNG, réservé à cette machine)"
+# Il interroge plusieurs moteurs publics ; il n'écoute que sur 127.0.0.1 et n'est jamais exposé.
+apt-get install -y python3-dev python3-babel build-essential libxslt-dev zlib1g-dev libffi-dev libssl-dev
+id searxng >/dev/null 2>&1 || useradd --system --shell /usr/sbin/nologin --home-dir /usr/local/searxng --create-home searxng
+if [ -d /usr/local/searxng/searxng-src/.git ]; then
+  sudo -u searxng git -C /usr/local/searxng/searxng-src pull --ff-only
+else
+  sudo -u searxng git clone --depth 1 https://github.com/searxng/searxng /usr/local/searxng/searxng-src
+fi
+[ -x /usr/local/searxng/searx-pyenv/bin/python ] || sudo -u searxng python3 -m venv /usr/local/searxng/searx-pyenv
+sudo -u searxng /usr/local/searxng/searx-pyenv/bin/pip install --quiet -U pip setuptools wheel pyyaml msgspec typing-extensions pybind11
+sudo -u searxng sh -c 'cd /usr/local/searxng/searxng-src && /usr/local/searxng/searx-pyenv/bin/pip install --quiet --use-pep517 --no-build-isolation -e .'
+sudo -u searxng /usr/local/searxng/searx-pyenv/bin/pip install --quiet granian
+mkdir -p /etc/searxng
+if [ ! -f /etc/searxng/settings.yml ]; then
+  cat > /etc/searxng/settings.yml <<EOF
+use_default_settings: true
+general:
+  instance_name: "br-ia"
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json
+server:
+  secret_key: "$(openssl rand -hex 32)"
+  bind_address: "127.0.0.1"
+  port: 8888
+  limiter: false
+  image_proxy: false
+EOF
+fi
+chown -R root:searxng /etc/searxng
+chmod 0640 /etc/searxng/settings.yml
+cat > /etc/systemd/system/searxng.service <<'EOF'
+[Unit]
+Description=SearXNG, moteur de recherche des IA de <br/>
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=searxng
+Group=searxng
+Environment=SEARXNG_SETTINGS_PATH=/etc/searxng/settings.yml
+WorkingDirectory=/usr/local/searxng/searxng-src
+ExecStart=/usr/local/searxng/searx-pyenv/bin/granian --interface wsgi --host 127.0.0.1 --port 8888 searx.webapp:app
+Restart=always
+RestartSec=10
+MemoryMax=400M
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable searxng
+systemctl restart searxng
 
 echo "== Jeton de la machine"
 if [ ! -f /etc/bria/worker.env ]; then

@@ -22,7 +22,7 @@ export const locale = pgEnum("locale", ["fr", "en"]);
 export const teamRole = pgEnum("team_role", ["chef", "membre"]);
 export const authorKind = pgEnum("author_kind", ["member", "serveur", "cuisinier"]);
 export const invitationKind = pgEnum("invitation_kind", ["beta", "team"]);
-export const memoryType = pgEnum("memory_type", ["decision", "question", "task", "compromise"]);
+export const memoryType = pgEnum("memory_type", ["decision", "question", "task", "compromise", "knowledge"]);
 export const memoryStatus = pgEnum("memory_status", ["open", "resolved", "stopped"]);
 export const orderStatus = pgEnum("order_status", ["pending", "running", "done", "failed", "stopped"]);
 

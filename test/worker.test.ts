@@ -184,6 +184,15 @@ describe("fichier .zip", () => {
     expect(readdirSync(join(spacesRoot, PROJECT))).toEqual(["rapport.md"]);
   });
 
+  it("ne lit que des pages web, sans attendre de dossier de commande", async () => {
+    const { tools } = setup();
+    for (const url of ["file:///etc/passwd", "ftp://exemple.org/x", "javascript:alert(1)"]) {
+      const answer = await tools.handle(ORDER, "cloud_web_read", { url });
+      expect(answer).toEqual({ ok: false, output: "Seules les adresses http et https peuvent être lues." });
+    }
+    expect((await tools.handle(ORDER, "cloud_web_search", { query: "x" })).ok).toBe(false);
+  });
+
   it("refuse un aperçu hors du dossier du projet", async () => {
     const { tools } = setup();
     await prepare(tools);

@@ -1,0 +1,1 @@
+ALTER TYPE "public"."memory_type" ADD VALUE 'knowledge';

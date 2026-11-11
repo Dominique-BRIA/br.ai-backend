@@ -131,7 +131,7 @@ export const machineSession = z.object({
 export type MachineSession = z.infer<typeof machineSession>;
 
 /** Mémoire du projet, tenue par l'agent serveur (et modifiable par les membres). */
-export const memoryType = z.enum(["decision", "question", "task", "compromise"]);
+export const memoryType = z.enum(["decision", "question", "task", "compromise", "knowledge"]);
 export type MemoryType = z.infer<typeof memoryType>;
 
 /** Ouvert ; résolu (question tranchée, tâche faite, compromis accepté) ; stoppé par le chef. */

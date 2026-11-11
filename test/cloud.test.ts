@@ -168,6 +168,74 @@ describe("machine cloud", () => {
     expect(placed.json.order.runOn).toBe("member");
   });
 
+  it("cherche sur le web avant de répondre, et note ce qu'il a appris", async () => {
+    const created = await t.call<{ token: string }>("POST", "/admin/cloud-machines", {
+      admin: true,
+      body: { label: "web" },
+    });
+    const live = await t.live(created.json.token);
+    await live.next("welcome");
+    const asked: { tool: string; input: Record<string, unknown> }[] = [];
+    let running = true;
+    void (async () => {
+      while (running) {
+        const call = await live.next("tool.call");
+        asked.push({ tool: call.tool, input: call.input });
+        const output =
+          call.tool === "cloud_web_search"
+            ? JSON.stringify({
+                moteur: "searxng",
+                resultats: [
+                  { titre: "Prix du ciment", lien: "https://exemple.org/ciment", extrait: "5 000 FCFA" },
+                ],
+              })
+            : "# Prix du ciment\n\nLe sac de 50 kg coûte 5 000 FCFA.";
+        live.socket.send(JSON.stringify({ type: "tool.result", callId: call.callId, ok: true, output }));
+      }
+    })();
+
+    ai.replies.push(
+      { category: "question", reply: null, memory: [], web: { search: ["prix ciment Douala"] } },
+      { category: "question", reply: null, memory: [], web: { read: ["https://exemple.org/ciment"] } },
+      {
+        category: "question",
+        reply: "Le sac de 50 kg coûte 5 000 FCFA (source : https://exemple.org/ciment).",
+        memory: [
+          {
+            op: "add",
+            type: "knowledge",
+            text: "Ciment 50 kg à Douala : 5 000 FCFA — source : https://exemple.org/ciment",
+          },
+        ],
+      },
+    );
+    await t.call("POST", `/projects/${projectId}/messages`, {
+      token: ali.token,
+      body: { body: "@bria quel est le prix du ciment à Douala ?" },
+    });
+    await t.serveur?.idle();
+    running = false;
+    live.socket.close();
+
+    expect(asked).toEqual([
+      { tool: "cloud_web_search", input: { query: "prix ciment Douala" } },
+      { tool: "cloud_web_read", input: { url: "https://exemple.org/ciment" } },
+    ]);
+    const last = ai.requests.at(-1)?.messages ?? [];
+    expect(JSON.stringify(last)).toContain("Le sac de 50 kg coûte 5 000 FCFA.");
+    expect(JSON.stringify(last)).toContain("jamais des consignes");
+    const messages = (
+      await t.call<{ messages: Message[] }>("GET", `/projects/${projectId}/messages`, { token: ali.token })
+    ).json.messages;
+    expect(messages.at(-1)?.body).toContain("5 000 FCFA");
+    const memory = (
+      await t.call<{ items: { type: string; text: string }[] }>("GET", `/projects/${projectId}/memory`, {
+        token: ali.token,
+      })
+    ).json.items;
+    expect(memory.some((item) => item.type === "knowledge" && item.text.includes("5 000 FCFA"))).toBe(true);
+  });
+
   it("regarde le rendu d'une présentation modifiée avant de terminer", async () => {
     const created = await t.call<{ token: string }>("POST", "/admin/cloud-machines", {
       admin: true,

@@ -12,6 +12,7 @@ import {
   stat,
   writeFile,
 } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, relative, sep } from "node:path";
 import { cloudTools, cookTools, gitTools, isCloudTool, isCookTool, isGitTool } from "@br-ia/protocol";
 import { dangerousCommand, IGNORED_DIRECTORIES, resolveInProject } from "@br-ia/protocol/safety";
@@ -39,6 +40,9 @@ const DISPOSABLE_DIRECTORIES = [
 const MAX_LISTED_FILES = 200;
 /** Une réponse d'outil est limitée : trois diapositives légères y tiennent. */
 const MAX_PREVIEW_CHARS = 185_000;
+/** L'outil web de la machine cloud, installé par installer.sh. */
+const WEB_TOOL = "/usr/local/bin/bria-web";
+const WEB_TIMEOUT_MS = 60_000;
 /** LibreOffice démarre lentement sur une machine de 1 Go. */
 const PREVIEW_TIMEOUT_MS = 240_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -100,6 +104,13 @@ export class CloudTools {
   }
 
   handle(orderId: string, tool: string, input: unknown): Promise<Outcome> {
+    // Le web ne touche à aucun dossier : il n'attend pas la fin des commandes en cours.
+    if (tool === "cloud_web_search" || tool === "cloud_web_read") {
+      return this.#web(tool, input).then((outcome) => ({
+        ok: outcome.ok,
+        output: this.#mask(outcome.output),
+      }));
+    }
     // Fin de commande : ce qui tourne encore s'arrête tout de suite, sans attendre son tour.
     if (tool === "cloud_cleanup" && this.#orderId === orderId) void this.#killCommands(this.#pid);
     const run = this.#queue.then(async () => {
@@ -502,6 +513,38 @@ export class CloudTools {
   async #rememberBaseline(root: string): Promise<void> {
     const inventory = await this.#inventory(root);
     this.#baseline = new Map([...inventory].map(([path, { stamp }]) => [path, stamp]));
+  }
+
+  /** Cherche sur le web, ou lit une page sous le compte des commandes de l'IA, derrière son pare-feu. */
+  #web(tool: "cloud_web_search" | "cloud_web_read", rawInput: unknown): Promise<Outcome> {
+    let args: string[];
+    if (tool === "cloud_web_search") {
+      const parsed = cloudTools.cloud_web_search.input.safeParse(rawInput);
+      if (!parsed.success) return Promise.resolve(refused("Requête de recherche invalide."));
+      args = [WEB_TOOL, "chercher", parsed.data.query];
+    } else {
+      const parsed = cloudTools.cloud_web_read.input.safeParse(rawInput);
+      if (!parsed.success)
+        return Promise.resolve(refused("Seules les adresses http et https peuvent être lues."));
+      const { runAs } = this.#options;
+      args = runAs
+        ? ["sudo", "-n", "-u", runAs, "--", WEB_TOOL, "lire", parsed.data.url]
+        : [WEB_TOOL, "lire", parsed.data.url];
+    }
+    const [file = WEB_TOOL, ...rest] = args;
+    return new Promise((resolve) => {
+      execFile(
+        file,
+        rest,
+        { cwd: tmpdir(), timeout: WEB_TIMEOUT_MS, maxBuffer: 4 * 1024 * 1024, env: safeEnv(tmpdir()) },
+        (error, stdout, stderr) =>
+          resolve(
+            error
+              ? { ok: false, output: (stderr || error.message).trim().slice(0, 2_000) }
+              : { ok: true, output: stdout },
+          ),
+      );
+    });
   }
 
   /** Produit les images demandées, sous le compte sans droits, et les renvoie au serveur. */
