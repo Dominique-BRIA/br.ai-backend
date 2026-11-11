@@ -290,12 +290,6 @@ export class AiClient implements Ai {
 const keyOf = (choice: ModelChoice) => `${choice.provider.name}:${choice.model}`;
 
 /**
- * L'historique tel que chaque fournisseur l'accepte. Gemini ajoute à ses appels d'outils des
- * champs à lui (extra_content, la signature de sa réflexion) qu'il veut retrouver tels quels ;
- * les autres fournisseurs les refusent. Mistral exige en plus des identifiants de 9 lettres ou
- * chiffres : les autres sont remplacés par une empreinte, la même pour l'appel et sa réponse.
- */
-/**
  * Combien attendre avant de réessayer le même modèle après un 429 ; `null` pour passer au suivant.
  * Le cuisinier travaille sans personne qui attend : il patiente sur une limite à la minute plutôt
  * que de changer de modèle. Une limite longue (quota du jour) ne s'attend pas.
@@ -314,6 +308,12 @@ function shortFailure(failure: string): string {
   return `${model} (${status ?? "échec"})`;
 }
 
+/**
+ * L'historique tel que chaque fournisseur l'accepte. Gemini ajoute à ses appels d'outils des
+ * champs à lui (extra_content, la signature de sa réflexion) qu'il veut retrouver tels quels ;
+ * les autres fournisseurs les refusent. Mistral exige en plus des identifiants de 9 lettres ou
+ * chiffres : les autres sont remplacés par une empreinte, la même pour l'appel et sa réponse.
+ */
 export function messagesFor(provider: string, messages: ChatMessage[]): ChatMessage[] {
   if (provider === "gemini") return messages;
   const id = (value: string) =>

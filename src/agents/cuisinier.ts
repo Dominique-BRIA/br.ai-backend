@@ -40,7 +40,6 @@ const WAITING_TEXT =
   "En attente d'une machine : associez un dossier à ce projet sur votre machine (clic droit sur le projet dans la vue Équipes), ou demandez à un coéquipier de prêter la sienne.";
 const CLOUD_WAITING_TEXT =
   "En attente de la machine cloud de <br/> : elle termine une autre commande, ou elle est hors ligne pour l'instant.";
-/** Ce que la machine cloud dit d'elle-même au cuisinier, à la place du propriétaire et de ses dossiers. */
 /** Coupée depuis moins longtemps, une commande reprend au redémarrage du serveur. */
 const INTERRUPTED_RESUME_MS = 30 * 60_000;
 
@@ -54,10 +53,11 @@ interface Delivered {
 }
 const NOTHING_DELIVERED: Delivered = { files: [], contents: "" };
 
+/** Ce que la machine cloud dit d'elle-même au cuisinier, à la place du propriétaire et de ses dossiers. */
 const CLOUD_MACHINE_LINES = [
   "Machine : la machine cloud de <br/>, sous Linux (1 Go de mémoire), commandes exécutées par sh. Il n'y a ni secrets ni fichier .env, et rien n'est accessible hors de ce dossier.",
-  "Le dossier est l'espace réservé du projet : ce qui s'y trouve vient des commandes précédentes et reste pour les suivantes. Regarde d'abord ce qu'il contient avec list_dir. À la fin, tout son contenu est envoyé à l'équipe dans un fichier .zip à télécharger.",
-  "L'équipe reçoit tout ce qui est dans ce dossier, sauf le sous-dossier .travail/ : mets-y tes scripts, brouillons et fichiers intermédiaires, il est effacé à la fin. Hors de .travail/, ne laisse que ce que l'équipe doit recevoir. Pour retirer un fichier devenu inutile, utilise rm suivi de son nom, sans option.",
+  "Le dossier est l'espace réservé du projet : ce qui s'y trouve vient des commandes précédentes et reste pour les suivantes. Regarde d'abord ce qu'il contient avec list_dir. À la fin, ce que cette commande a créé ou modifié est envoyé à l'équipe dans un fichier .zip à télécharger ; le reste demeure dans l'espace.",
+  "L'équipe reçoit les fichiers créés ou modifiés, sauf ceux du sous-dossier .travail/ : mets-y tes scripts, brouillons et fichiers intermédiaires, il est effacé à la fin. Hors de .travail/, ne laisse que ce que l'équipe doit recevoir. Pour retirer un fichier devenu inutile, utilise rm suivi de son nom, sans option.",
   "Ne crée jamais d'archive (.zip, .tar.gz) : <br/> prépare le fichier .zip lui-même à la fin, sauf si le membre demande explicitement une archive à l'intérieur. La liste réelle du contenu du .zip est ajoutée à ton bilan : ne l'écris pas toi-même.",
   'Les présentations PowerPoint existantes se modifient uniquement avec bria-doc, lancé par run_command depuis le dossier du projet, jamais avec un script qui réécrit une diapositive. Commence par : bria-doc inspecter fichier.pptx (il numérote les diapositives et les formes). Ensuite : bria-doc remplacer fichier.pptx "ancien" "nouveau" [--diapo N] ; modifier-texte fichier.pptx DIAPO FORME "texte" ; ajouter-paragraphe fichier.pptx DIAPO FORME "texte" ; copier-forme fichier.pptx DIAPO FORME VERS_DIAPO "texte" [--gauche %] [--haut %] ; deplacer-forme fichier.pptx DIAPO FORME [--gauche %] [--haut %] [--largeur %] [--hauteur %] ; supprimer-forme fichier.pptx DIAPO FORME ; dupliquer-diapo fichier.pptx DIAPO [--position P], puis remplacer ses textes, pour ajouter une diapositive dans le même style ; supprimer-diapo fichier.pptx DIAPO ; deplacer-diapo fichier.pptx DIAPO POSITION ; restaurer fichier.pptx pour annuler la dernière modification. Change seulement l\'élément demandé, sans rien ajouter à côté. « À la fin de la présentation » désigne la dernière diapositive. Corrige ce que bria-doc affiche sous « À vérifier ».',
   "Pour une nouvelle présentation, écris un script python-pptx dans .travail/. Après avoir créé ou modifié une présentation, appelle visual_check sur les diapositives concernées (trois par appel) en décrivant le résultat attendu. C'est le seul moyen de voir le rendu : corrige seulement ce qui rend le résultat faux ou illisible, sans toucher au reste. Pour une petite modification, un contrôle suffit s'il ne signale rien de grave, et deux corrections au plus. N'ajuste pas un alignement ou un espacement qu'on ne t'a pas demandé.",

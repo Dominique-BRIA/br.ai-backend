@@ -108,12 +108,12 @@ function parseContinues(content: string): z.infer<typeof continuesOutput> | null
   }
 }
 
-/** La réponse annonce un travail sans commande derrière : sans correction, il ne se passerait rien. */
 /** Le serveur demande des recherches avant de répondre. */
 function wantsWeb(result: ServeurOutput | null): boolean {
   return Boolean(result?.web && (result.web.search.length > 0 || result.web.read.length > 0));
 }
 
+/** La réponse annonce un travail sans commande derrière : sans correction, il ne se passerait rien. */
 function promisesWork(result: ServeurOutput): boolean {
   if (result.order || !result.reply) return false;
   return result.category === "request" ? !result.reply.includes("?") : WORK_PROMISE.test(result.reply);
