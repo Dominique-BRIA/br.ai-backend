@@ -15,6 +15,7 @@ import type { AppContext } from "../context.ts";
 import { attachments, projects, users } from "../db/schema.ts";
 import { HttpError, notFound, parse } from "../http/errors.ts";
 import { requireProject, roleIn } from "../services/access.ts";
+import { attachmentText } from "../services/attachmentText.ts";
 
 const projectParams = z.object({ projectId: z.uuid() });
 const attachmentParams = z.object({ attachmentId: z.uuid() });
@@ -104,6 +105,8 @@ export function attachmentRoutes(app: FastifyInstance, ctx: AppContext): void {
         })
         .returning();
       if (!row) throw new Error("Pièce jointe non enregistrée.");
+      // Le texte est lu tout de suite : le message qui suit l'envoi peut demander à l'IA de l'analyser.
+      await attachmentText(ctx, row);
       return { attachment: { id: row.id, name: row.name, contentType: row.contentType, size: row.size } };
     },
   );
@@ -144,8 +147,20 @@ export function attachmentRoutes(app: FastifyInstance, ctx: AppContext): void {
         size: file.size,
         createdAt: file.createdAt.toISOString(),
         uploadedBy: uploader,
+        hasText: file.text !== null,
       })),
     };
+  });
+
+  app.get("/attachments/:attachmentId/text", async (request, reply) => {
+    const { attachmentId } = parse(attachmentParams, request.params);
+    const { view } = parse(viewQuery, request.query);
+    const file = await readable(request.userId, attachmentId);
+    const { text, note } = await attachmentText(ctx, file);
+    if (!text) throw notFound(note ?? "Aucun texte lisible dans ce document.");
+    const body = note ? `> ${note}\n\n${text}` : text;
+    const name = `${file.name.replace(/\.[^.]+$/, "")}.md`;
+    return sendFile(reply, Buffer.from(body, "utf8"), name, "text/plain", view === "1");
   });
 
   app.get("/attachments/:attachmentId/files", async (request): Promise<ZipEntriesResponse> => {

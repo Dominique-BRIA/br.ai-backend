@@ -214,7 +214,12 @@ export const attachmentResponse = z.object({ attachment });
 export type AttachmentResponse = z.infer<typeof attachmentResponse>;
 
 /** GET /projects/:projectId/files — les fichiers partagés dans le chat. `uploadedBy` nul : le cuisinier. */
-export const projectFile = attachment.extend({ createdAt: z.string(), uploadedBy: z.string().nullable() });
+export const projectFile = attachment.extend({
+  createdAt: z.string(),
+  uploadedBy: z.string().nullable(),
+  /** L'IA peut lire ce document : son texte est disponible par GET /attachments/:id/text. */
+  hasText: z.boolean(),
+});
 export type ProjectFile = z.infer<typeof projectFile>;
 export interface ProjectFilesResponse {
   files: ProjectFile[];

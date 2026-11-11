@@ -203,6 +203,12 @@ export const attachments = pgTable(
     contentType: text().notNull(),
     size: integer().notNull(),
     storageKey: text().notNull().unique(),
+    /** Le texte du document en Markdown, pour les IA ; nul s'il n'a pas pu être lu. */
+    text: text(),
+    /** Pourquoi le texte manque ou est incomplet. */
+    textNote: text(),
+    /** Nul tant que le document n'a pas été lu. */
+    textExtractedAt: timestamp({ withTimezone: true }),
     createdAt: createdAt(),
   },
   (t) => [index().on(t.messageId)],

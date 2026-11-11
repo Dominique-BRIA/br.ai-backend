@@ -4,6 +4,7 @@ import { z } from "zod";
 import { type Ai, AiUnavailableError, type ChatMessage, type ModelChoice } from "../ai/client.ts";
 import type { AppContext, CatchUpRequest } from "../context.ts";
 import { messages, teamMembers, users } from "../db/schema.ts";
+import { documentsForPrompt } from "../services/attachmentText.ts";
 import { quotaReached } from "../services/credits.ts";
 import { addMemory, announceMemoryChange, listMemory, setMemoryStatus } from "../services/memory.ts";
 import { postAgentMessage, toMessages } from "../services/messages.ts";
@@ -134,6 +135,7 @@ Ta réponse (quand tu réponds) :
 - en Markdown si c'est utile (listes, tableaux) ;
 - en t'appuyant sur la mémoire et l'historique, sans inventer ce que tu ne sais pas ;
 - sans jamais affirmer où se trouve un fichier ou comment le télécharger sans l'avoir lu dans le fil : une commande sur la machine cloud rend un .zip joint à son message de fin ; une commande sur la machine d'un membre laisse ses fichiers dans le dossier du projet sur son ordinateur, sans téléchargement. Regarde où chaque commande a été réalisée dans « Commandes récentes ».
+- pour un document joint, en t'appuyant sur son texte quand il figure dans « Documents joints » : tu peux le résumer, l'analyser, le comparer ou en citer des passages. S'il n'y figure pas, s'il est illisible ou si la suite manque, dis-le au lieu de deviner.
 Si le message contient @bria, tu dois répondre.
 
 Renvoie uniquement un objet JSON de la forme :
@@ -254,10 +256,27 @@ export class ServeurAgent {
     ]);
     const open = memory.filter((item) => item.status === "open");
     const refs = new Map(open.map((item, index) => [`M${index + 1}`, item]));
+    // Le texte des documents : ceux du message d'abord, puis du message cité, puis du fil récent.
+    const documents = await documentsForPrompt(
+      this.ctx,
+      [
+        { messageIds: [message.id], perDocument: 24_000 },
+        { messageIds: message.replyTo ? [message.replyTo.id] : [], perDocument: 16_000 },
+        {
+          messageIds: history
+            .filter((entry) => entry.attachments.length > 0)
+            .map((entry) => entry.id)
+            .reverse(),
+          perDocument: 6_000,
+        },
+      ],
+      50_000,
+      8,
+    );
 
     let result: ServeurOutput;
     try {
-      const messages = this.#prompt(message, members, history, memory, refs, recentOrders);
+      const messages = this.#prompt(message, members, history, memory, refs, recentOrders, documents);
       const completion = await this.ai.complete(this.chain, {
         purpose: "serveur",
         teamId,
@@ -468,6 +487,7 @@ export class ServeurAgent {
     memory: MemoryItem[],
     refs: Map<string, MemoryItem>,
     recentOrders: Order[],
+    documents: string[] = [],
   ): ChatMessage[] {
     const name = authorLabel;
     const team = members.map(
@@ -506,6 +526,7 @@ export class ServeurAgent {
       "Historique récent du chat :",
       ...(transcript.length > 0 ? transcript : ["(vide)"]),
       "",
+      ...documents,
       `Nouveau message de ${name(message.author)} :`,
       message.body || "(message sans texte)",
       ...(message.attachments.length > 0

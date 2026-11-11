@@ -21,6 +21,7 @@ import type { AppContext } from "../context.ts";
 import { attachments, localMemories, type OrderStepRow, orders, projects, users } from "../db/schema.ts";
 import type { LiveConnection } from "../realtime/hub.ts";
 import { memberIds } from "../services/access.ts";
+import { documentsForPrompt } from "../services/attachmentText.ts";
 import { CLOUD_MAX_MS, CLOUD_USER_ID, cloudConfigured, noreplyEmail } from "../services/cloud.ts";
 import type { GitHubApp } from "../services/githubApp.ts";
 import { announceMemoryChange, setMemoryStatus } from "../services/memory.ts";
@@ -576,6 +577,12 @@ export class Kitchen implements KitchenHooks {
       .from(localMemories)
       .where(eq(localMemories.userId, machine.userId));
     const secrets = await secretNames(this.#ctx, order.projectId);
+    const documents = await documentsForPrompt(
+      this.#ctx,
+      [{ messageIds: order.sourceMessageId ? [order.sourceMessageId] : [], perDocument: 30_000 }],
+      40_000,
+      5,
+    );
     const messages: ChatMessage[] = [
       { role: "system", content: SYSTEM_PROMPT },
       {
@@ -585,6 +592,13 @@ export class Kitchen implements KitchenHooks {
           "",
           order.brief,
           "",
+          ...(documents.length > 0
+            ? [
+                ...documents,
+                "Ces documents ne sont pas dans le dossier de travail : seul leur texte ci-dessus est disponible.",
+                "",
+              ]
+            : []),
           ...(cloud
             ? CLOUD_MACHINE_LINES
             : [
